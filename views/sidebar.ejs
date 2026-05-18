@@ -1,0 +1,20 @@
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>Amazon SOP</h2>
+            <p>运营管理系统</p>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="<%= typeof active !== 'undefined' && active === 'dashboard' ? 'active' : '' %>">产品看板</a>
+            <a href="/sop" class="<%= typeof active !== 'undefined' && active === 'sop' ? 'active' : '' %>">SOP模板</a>
+            <a href="/import" class="<%= typeof active !== 'undefined' && active === 'import' ? 'active' : '' %>">导入数据</a>
+        </nav>
+    </aside>
+
+    <!-- Fullscreen Image Viewer with scroll zoom -->
+    <div class="image-viewer" id="imageViewer" onclick="closeViewer()" style="display:none;">
+        <div class="viewer-container" onclick="event.stopPropagation()">
+            <img id="viewerImg" src="" alt="大图" onclick="event.stopPropagation()">
+        </div>
+        <button class="viewer-close" onclick="closeViewer()">&times;</button>
+        <div class="viewer-hint">滚轮缩放 · 拖拽平移 · 点击关闭</div>
+    </div>

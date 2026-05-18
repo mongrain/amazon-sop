@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head', { title: product.name || product.asin }) %>
+</head>
+<body>
+    <div class="app">
+        <%- include('sidebar', { active: '' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <a href="/dashboard" class="back-link">&larr; 返回看板</a>
+                        <h1><%= product.name || product.asin %></h1>
+                        <div class="product-meta" style="margin-top:6px;">
+                            <span class="meta-item">ASIN: <code><%= product.asin %></code></span>
+                            <% if (product.category) { %><span class="meta-item">分类: <%= product.category %></span><% } %>
+                            <% if (product.seq) { %><span class="meta-item">序号: <%= product.seq %></span><% } %>
+                            <span class="meta-item">状态:
+                                <select class="status-select" style="padding:2px 8px; font-size:12px;" onchange="updateProductStatus('<%= product.asin %>', this.value)">
+                                    <% ['待处理', '进行中', '已完成', '跳过'].forEach(s => { %>
+                                    <option value="<%= s %>" <%= product.status === s ? 'selected' : '' %>><%= s %></option>
+                                    <% }) %>
+                                </select>
+                            </span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <div class="progress-bar" style="min-width:140px;">
+                            <div class="progress-fill" id="overall-progress-fill" style="width: <%= Math.round(product.overall_progress * 100) %>%"></div>
+                            <span class="progress-text" id="overall-progress-text"><%= Math.round(product.overall_progress * 100) %>%</span>
+                        </div>
+                        <button class="btn-primary" onclick="openEditModal()" style="padding:6px 16px; font-size:13px;">编辑产品</button>
+                        <button class="btn-danger" onclick="deleteProduct()" style="padding:6px 16px;">删除产品</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sop-grid">
+                <% modules.forEach(module => { %>
+                <% const mp = moduleProgress[module.id] || { completed: 0, total: 0, percentage: 0 }; %>
+                <% const dataItems = module.sop_items.filter(i => i.is_data_column); %>
+                <% const actionItems = module.sop_items.filter(i => !i.is_data_column); %>
+                <div class="sop-card">
+                    <div class="sop-card-header">
+                        <h2 class="sop-card-title"><%= module.name %></h2>
+                        <span class="sop-card-count"><%= mp.completed %>/<%= mp.total %></span>
+                    </div>
+                    <div style="padding:8px 18px 0; background:#fafafa; border-bottom:1px solid var(--border);">
+                        <div class="progress-bar" style="min-width:100%; height:16px;">
+                            <div class="progress-fill" style="width: <%= Math.round(mp.percentage * 100) %>%;"></div>
+                            <span class="progress-text" style="font-size:10px;"><%= Math.round(mp.percentage * 100) %>%</span>
+                        </div>
+                    </div>
+                    <div class="sop-card-body">
+                        <!-- 数据字段 -->
+                        <% if (dataItems.length > 0) { %>
+                        <div class="sop-group">
+                            <div class="sop-group-header sop-group-data-header" onclick="toggleGroup(this)">
+                                <span class="sop-group-arrow">▼</span>
+                                <span class="sop-group-badge type-data">数据字段</span>
+                                <span class="sop-group-count"><%= dataItems.length %> 项</span>
+                            </div>
+                            <div class="sop-group-body">
+                                <div class="sop-items-grid">
+                                    <% dataItems.forEach(item => { %>
+                                    <% const rec = recordMap[item.id] || { id: '', status: '待处理', remark: '', updated_at: null }; %>
+                                    <div class="sop-data-item sop-data-field" data-item-id="<%= item.id %>">
+                                        <div class="sop-data-item-label"><%= item.name %></div>
+                                        <% if (item.name === '更新时间') { %>
+                                        <span class="sop-field-time" title="随数据库自动更新"><%= rec.updated_at ? new Date(rec.updated_at).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).replace(/\//g, '-') : '暂无' %></span>
+                                        <% } else { %>
+                                        <textarea class="sop-field-textarea" rows="2"
+                                                  placeholder="填写..."
+                                                  onblur="updateRecord('<%= rec.id %>', 'remark', this.value)"><%= rec.remark || '' %></textarea>
+                                        <% } %>
+                                    </div>
+                                    <% }) %>
+                                </div>
+                            </div>
+                        </div>
+                        <% } %>
+
+                        <!-- 操作项 -->
+                        <% if (actionItems.length > 0) { %>
+                        <div class="sop-group">
+                            <div class="sop-group-header sop-group-action-header" onclick="toggleGroup(this)">
+                                <span class="sop-group-arrow">▼</span>
+                                <span class="sop-group-badge type-action">操作项</span>
+                                <span class="sop-group-count"><%= actionItems.length %> 项</span>
+                            </div>
+                            <div class="sop-group-body">
+                                <div class="sop-items-list">
+                                    <% actionItems.forEach((item, idx) => { %>
+                                    <% const rec = recordMap[item.id] || { id: '', status: '待处理', remark: '', image_url: '' }; %>
+                                    <div class="sop-action-item" id="sop-item-<%= item.id %>">
+                                        <div class="sop-action-item-header">
+                                            <span class="sop-action-item-index">#<%= idx + 1 %></span>
+                                            <span class="sop-action-item-name"><%= item.name %></span>
+                                            <select class="sop-status-select" style="margin-left:auto;" onchange="updateRecord(<%= rec.id %>, 'status', this.value)">
+                                                <% ['待处理', '进行中', '已完成', '跳过'].forEach(s => { %>
+                                                <option value="<%= s %>" <%= rec.status === s ? 'selected' : '' %>><%= s %></option>
+                                                <% }) %>
+                                            </select>
+                                        </div>
+                                        <% if (item.instruction_text) { %>
+                                        <div class="sop-action-item-instruction" style="-webkit-line-clamp: 3; cursor:pointer; white-space:pre-wrap;" onclick="this.style.webkitLineClamp = this.style.webkitLineClamp === 'none' ? '3' : 'none'"><%= item.instruction_text %></div>
+                                        <% } %>
+                                        <!-- 模板示例图片：默认？号，hover显示 -->
+                                        <% if (item.image_url) { %>
+                                        <div class="sop-example-image sop-example-thumb">
+                                            <img src="<%= item.image_url %>" alt="示例图片" class="zoomable" onclick="openViewer(this.src)">
+                                        </div>
+                                        <% } %>
+                                        <!-- 用户上传的操作图片 -->
+                                        <% if (rec.image_url) { %>
+                                        <div class="sop-action-uploaded-images">
+                                            <% let uploadedUrls = []; %>
+                                            <% try { uploadedUrls = JSON.parse(rec.image_url); } catch(e) { uploadedUrls = [rec.image_url]; } %>
+                                            <% uploadedUrls.forEach(function(url) { %>
+                                            <div class="sop-action-uploaded-image">
+                                                <img src="<%= url %>" alt="操作图片" class="zoomable" onclick="openViewer(this.src)">
+                                                <button class="btn-icon-del" onclick="deleteActionImage(<%= rec.id %>, '<%= url %>')" title="删除图片">&times;</button>
+                                            </div>
+                                            <% }) %>
+                                        </div>
+                                        <% } %>
+                                        <div class="sop-action-footer">
+                                            <label class="btn-upload-action" title="上传操作截图">
+                                                📷 上传截图
+                                                <input type="file" accept="image/*" style="display:none;" onchange="uploadActionImage(<%= rec.id %>, this)">
+                                            </label>
+                                            <textarea class="sop-remark"
+                                                      placeholder="备注..."
+                                                      onblur="updateRecord(<%= rec.id %>, 'remark', this.value)"
+                                                      rows="1"><%= rec.remark || '' %></textarea>
+                                        </div>
+                                    </div>
+                                    <% }) %>
+                                </div>
+                            </div>
+                        </div>
+                        <% } %>
+                    </div>
+                </div>
+                <% }) %>
+            </div>
+        </main>
+    </div>
+
+    <!-- Edit Product Modal -->
+    <div class="modal-overlay" id="editModal" onclick="if(event.target===this)this.classList.remove('active')">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>编辑产品</h3>
+                <button class="modal-close" onclick="document.getElementById('editModal').classList.remove('active')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ASIN（不可修改）</label>
+                    <input type="text" id="editAsin" class="form-input" readonly style="background:#f5f5f5;">
+                </div>
+                <div class="form-group">
+                    <label>产品名称</label>
+                    <input type="text" id="editName" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>分类</label>
+                    <input type="text" id="editCategory" class="form-input">
+                </div>
+                <div class="modal-error" id="editError"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="document.getElementById('editModal').classList.remove('active')">取消</button>
+                <button class="btn-submit" onclick="saveEditProduct()">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function toggleGroup(header) {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.sop-group-arrow');
+        if (body.style.display === 'none') {
+            body.style.display = 'block';
+            arrow.textContent = '▼';
+        } else {
+            body.style.display = 'none';
+            arrow.textContent = '▶';
+        }
+    }
+
+    function updateRecord(recordId, field, value) {
+        const rid = String(recordId);
+        if (!rid || rid === 'undefined' || rid === 'null') return;
+        const data = {};
+        data[field] = value;
+        fetch('/api/record/' + rid, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(r => {
+            if (r.ok) updateTimeDisplays();
+        }).catch(e => console.error('Update failed:', e));
+        refreshProgress();
+    }
+
+    function updateTimeDisplays() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const M = String(now.getMonth() + 1).padStart(2, '0');
+        const D = String(now.getDate()).padStart(2, '0');
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        const timeStr = `${y}-${M}-${D} ${h}:${m}:${s}`;
+        document.querySelectorAll('.sop-field-time').forEach(el => {
+            el.textContent = timeStr;
+        });
+    }
+
+    async function uploadActionImage(recordId, input) {
+        if (!input.files[0] || !recordId) return;
+        const formData = new FormData();
+        formData.append('image', input.files[0]);
+        try {
+            const res = await fetch('/api/record/' + recordId + '/image', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert(data.error || '上传失败');
+            }
+        } catch (e) {
+            alert('上传失败: ' + e.message);
+        }
+    }
+
+    async function deleteActionImage(recordId, imageUrl) {
+        if (!confirm('确认删除此图片？')) return;
+        try {
+            const res = await fetch('/api/record/' + recordId + '/image/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ image_url: imageUrl })
+            });
+            if (res.ok) location.reload();
+        } catch (e) {
+            alert('删除失败');
+        }
+    }
+
+    function updateProductStatus(asin, status) {
+        fetch('/api/product/' + asin, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status: status})
+        }).catch(e => console.error('Status update failed:', e));
+    }
+
+    function refreshProgress() {
+        const selects = document.querySelectorAll('.sop-status-select');
+        let completed = 0, total = 0;
+        selects.forEach(sel => {
+            total++;
+            if (sel.value === '已完成') completed++;
+        });
+        const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+        const fill = document.getElementById('overall-progress-fill');
+        const txt = document.getElementById('overall-progress-text');
+        if (fill) fill.style.width = pct + '%';
+        if (txt) txt.textContent = pct + '%';
+    }
+
+    function openEditModal() {
+        document.getElementById('editAsin').value = '<%= product.asin %>';
+        document.getElementById('editName').value = '<%= (product.name || '').replace(/'/g, "\\'") %>';
+        document.getElementById('editCategory').value = '<%= (product.category || '').replace(/'/g, "\\'") %>';
+        document.getElementById('editError').textContent = '';
+        document.getElementById('editModal').classList.add('active');
+    }
+
+    async function saveEditProduct() {
+        const asin = document.getElementById('editAsin').value.trim();
+        const name = document.getElementById('editName').value.trim();
+        const category = document.getElementById('editCategory').value.trim();
+        const errEl = document.getElementById('editError');
+
+        try {
+            const res = await fetch('/api/product/' + asin, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, category })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                errEl.textContent = data.error || '保存失败';
+            }
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+
+    async function deleteProduct() {
+        if (!confirm('确认删除该产品？所有操作记录将一并删除。')) return;
+        try {
+            const res = await fetch('/api/product/<%= product.asin %>/delete', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                window.location.href = '/dashboard';
+            } else {
+                alert('删除失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('网络错误: ' + e.message);
+        }
+    }
+    </script>
+</body>
+</html>

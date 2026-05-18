@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+</head>
+<body>
+    <div class="app">
+        <%- include('sidebar', { active: 'dashboard' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <h1>产品看板</h1>
+                    </div>
+                    <button class="btn-primary" onclick="openAddModal()">+ 新增产品</button>
+                </div>
+                <div class="header-actions">
+                    <form method="get" action="/dashboard" class="search-form">
+                        <input type="text" name="search" value="<%= current_search %>" placeholder="搜索ASIN或产品名称..." class="search-input">
+                        <select name="category" class="filter-select" onchange="this.form.submit()">
+                            <option value="">全部类别</option>
+                            <% categories.forEach(cat => { %>
+                            <option value="<%= cat %>" <%= current_category === cat ? 'selected' : '' %>><%= cat %></option>
+                            <% }) %>
+                        </select>
+                        <select name="status" class="filter-select" onchange="this.form.submit()">
+                            <option value="">全部状态</option>
+                            <option value="待处理" <%= current_status === '待处理' ? 'selected' : '' %>>待处理</option>
+                            <option value="进行中" <%= current_status === '进行中' ? 'selected' : '' %>>进行中</option>
+                            <option value="已完成" <%= current_status === '已完成' ? 'selected' : '' %>>已完成</option>
+                            <option value="跳过" <%= current_status === '跳过' ? 'selected' : '' %>>跳过</option>
+                        </select>
+                    </form>
+                </div>
+            </div>
+
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <span class="stat-number"><%= products.length %></span>
+                    <span class="stat-label">总产品</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number warning"><%= products.filter(p => p.status === '待处理').length %></span>
+                    <span class="stat-label">待处理</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number info"><%= products.filter(p => p.status === '进行中').length %></span>
+                    <span class="stat-label">进行中</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number success"><%= products.filter(p => p.status === '已完成').length %></span>
+                    <span class="stat-label">已完成</span>
+                </div>
+            </div>
+
+            <div id="product-table">
+                <div class="table-container">
+                    <table class="product-table">
+                        <thead>
+                            <tr>
+                                <th style="width:50px">#</th>
+                                <th>ASIN</th>
+                                <th>产品名称</th>
+                                <th>分类</th>
+                                <th style="width:80px">状态</th>
+                                <% modules.forEach(m => { %>
+                                <th style="width:100px" title="<%= m.name %>"><%= m.name.substring(0, 4) %></th>
+                                <% }) %>
+                                <th style="width:100px">总进度</th>
+                                <th style="width:90px">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% if (products.length === 0) { %>
+                            <tr>
+                                <td colspan="<%= modules.length + 6 %>" style="text-align:center; padding:40px; color:#999;">
+                                    暂无产品数据，请先<a href="/import" style="color:#409eff;">导入Excel数据</a>
+                                    或<a href="javascript:void(0)" onclick="openAddModal()" style="color:#409eff;">新增产品</a>
+                                </td>
+                            </tr>
+                            <% } %>
+                            <% products.forEach((p, idx) => { %>
+                            <tr class="product-row" onclick="window.location='/product/<%= p.asin %>'">
+                                <td><%= idx + 1 %></td>
+                                <td><code><%= p.asin %></code></td>
+                                <td><%= p.name || '-' %></td>
+                                <td><%= p.category || '-' %></td>
+                                <td>
+                                    <span class="status-badge status-<%= p.status || '待处理' %>">
+                                        <%= p.status || '待处理' %>
+                                    </span>
+                                </td>
+                                <% modules.forEach(m => { %>
+                                <td>
+                                    <% const mp = p.module_progress[m.id] || { completed: 0, total: 0, percentage: 0 }; %>
+                                    <div class="mini-progress">
+                                        <div class="mini-bar" style="width: <%= Math.round(mp.percentage * 100) %>%"></div>
+                                        <span class="mini-text"><%= mp.completed %>/<%= mp.total %></span>
+                                    </div>
+                                </td>
+                                <% }) %>
+                                <td>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: <%= Math.round(p.overall_progress * 100) %>%"></div>
+                                        <span class="progress-text"><%= Math.round(p.overall_progress * 100) %>%</span>
+                                    </div>
+                                </td>
+                                <td onclick="event.stopPropagation()" style="display:flex; gap:6px;">
+                                    <a href="/product/<%= p.asin %>" class="btn-sm">详情</a>
+                                    <button class="btn-sm" onclick="event.stopPropagation(); openEditModal('<%= p.asin %>', '<%= (p.name||'').replace(/'/g, "\\'") %>', '<%= p.category || '' %>')" title="编辑">编辑</button>
+                                    <button class="btn-sm" onclick="event.stopPropagation(); deleteProduct('<%= p.asin %>')" title="删除" style="color:var(--danger);border-color:var(--danger);">删除</button>
+                                </td>
+                            </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Product Modal -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>新增产品</h3>
+                <button class="modal-close" onclick="closeModal('addModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="required">ASIN</label>
+                    <input type="text" id="addAsin" class="form-input" placeholder="例如: B0ABC12345">
+                </div>
+                <div class="form-group">
+                    <label>产品名称</label>
+                    <input type="text" id="addName" class="form-input" placeholder="可选">
+                </div>
+                <div class="form-group">
+                    <label>分类</label>
+                    <input type="text" id="addCategory" class="form-input" placeholder="可选">
+                </div>
+                <div class="modal-error" id="addError"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('addModal')">取消</button>
+                <button class="btn-submit" onclick="addProduct()">确认新增</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Product Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>编辑产品</h3>
+                <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ASIN（不可修改）</label>
+                    <input type="text" id="editAsin" class="form-input" readonly style="background:#f5f5f5;">
+                </div>
+                <div class="form-group">
+                    <label>产品名称</label>
+                    <input type="text" id="editName" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>分类</label>
+                    <input type="text" id="editCategory" class="form-input">
+                </div>
+                <div class="modal-error" id="editError"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('editModal')">取消</button>
+                <button class="btn-submit" onclick="saveEditProduct()">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function openAddModal() {
+        document.getElementById('addAsin').value = '';
+        document.getElementById('addName').value = '';
+        document.getElementById('addCategory').value = '';
+        document.getElementById('addError').textContent = '';
+        document.getElementById('addModal').classList.add('active');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    async function addProduct() {
+        const asin = document.getElementById('addAsin').value.trim();
+        const name = document.getElementById('addName').value.trim();
+        const category = document.getElementById('addCategory').value.trim();
+        const errEl = document.getElementById('addError');
+
+        if (!asin) { errEl.textContent = 'ASIN 为必填项'; return; }
+
+        try {
+            const res = await fetch('/api/product', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ asin, name, category })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                window.location.href = '/product/' + asin;
+            } else {
+                errEl.textContent = data.error || '新增失败';
+            }
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+
+    function openEditModal(asin, name, category) {
+        document.getElementById('editAsin').value = asin;
+        document.getElementById('editName').value = name || '';
+        document.getElementById('editCategory').value = category || '';
+        document.getElementById('editError').textContent = '';
+        document.getElementById('editModal').classList.add('active');
+    }
+
+    async function saveEditProduct() {
+        const asin = document.getElementById('editAsin').value.trim();
+        const name = document.getElementById('editName').value.trim();
+        const category = document.getElementById('editCategory').value.trim();
+        const errEl = document.getElementById('editError');
+
+        try {
+            const res = await fetch('/api/product/' + asin, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, category })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                closeModal('editModal');
+                location.reload();
+            } else {
+                errEl.textContent = data.error || '保存失败';
+            }
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+
+    async function deleteProduct(asin) {
+        if (!confirm('确认删除产品 ' + asin + '？此操作不可恢复。')) return;
+        try {
+            const res = await fetch('/api/product/' + asin + '/delete', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert('删除失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('网络错误: ' + e.message);
+        }
+    }
+
+    // Close modal on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+        el.addEventListener('click', function(e) {
+            if (e.target === this) this.classList.remove('active');
+        });
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'));
+        }
+    });
+    </script>
+</body>
+</html>
