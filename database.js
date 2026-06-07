@@ -74,6 +74,48 @@ async function initDb() {
             // Silently skip
         }
     }
+
+    // Ensure product_versions table exists (migration)
+    try {
+        await p.execute(`CREATE TABLE IF NOT EXISTS product_versions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            version_number INT NOT NULL,
+            version_name VARCHAR(200) DEFAULT NULL,
+            snapshot_data LONGTEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            UNIQUE KEY uk_product_version (product_id, version_number),
+            INDEX idx_product (product_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    // Migration: unify "更新日期" / 站外推广"日期" to "更新时间"
+    // The display name must match the field that auto-tracks product_sop_records.updated_at
+    try {
+        const [legacy] = await p.execute(
+            "SELECT si.id, si.module_id FROM sop_items si JOIN sop_modules sm ON si.module_id = sm.id " +
+            "WHERE (si.name = '更新日期') OR (si.name = '日期' AND sm.name = '站外推广')"
+        );
+        for (const row of legacy) {
+            // Only rename if the module doesn't already have a "更新时间" item (avoid duplicates)
+            const [exists] = await p.execute(
+                "SELECT id FROM sop_items WHERE module_id = ? AND name = '更新时间'",
+                [row.module_id]
+            );
+            if (exists.length === 0) {
+                await p.execute(
+                    "UPDATE sop_items SET name = '更新时间' WHERE id = ?",
+                    [row.id]
+                );
+            }
+        }
+    } catch (e) {
+        // Silently skip migration errors
+    }
 }
 
 /**

@@ -49,6 +49,24 @@ app.get('/', (req, res) => {
     res.redirect('/dashboard');
 });
 
+/**
+ * Build a module-name → item-name → table_ref lookup from sop-data.js.
+ * Used to enrich DB-sourced items so views can identify the data source of a field.
+ */
+function buildTableRefMap() {
+    const refMap = {};
+    for (const mod of sopData.modules) {
+        const itemMap = {};
+        for (const item of mod.items) {
+            if (item.table_ref) {
+                itemMap[item.name] = item.table_ref;
+            }
+        }
+        refMap[mod.name] = itemMap;
+    }
+    return refMap;
+}
+
 app.get('/dashboard', async (req, res) => {
     try {
         const { search = '', category = '', status = '' } = req.query;
@@ -111,6 +129,16 @@ app.get('/product/:asin', async (req, res) => {
         // Filter out 基础信息 (sort_order=1)
         const modules = allModules.filter(m => m.sort_order > 1);
 
+        // Enrich items with table_ref so views can identify fields by data source
+        const refMap = buildTableRefMap();
+        for (const mod of modules) {
+            const itemRefs = refMap[mod.name] || {};
+            mod.sop_items = mod.sop_items.map(item => ({
+                ...item,
+                table_ref: itemRefs[item.name] || null
+            }));
+        }
+
         // Fetch all records for this product
         const records = await queryAll('SELECT * FROM product_sop_records WHERE product_id = ?', [product.id]);
         const recordMap = {};
@@ -136,18 +164,7 @@ app.get('/product/:asin', async (req, res) => {
 app.get('/sop', async (req, res) => {
     try {
         const dbModules = await getModulesWithItems();
-
-        // Build table_ref lookup: module name → item name → table_ref
-        const refMap = {};
-        for (const mod of sopData.modules) {
-            const itemMap = {};
-            for (const item of mod.items) {
-                if (item.table_ref) {
-                    itemMap[item.name] = item.table_ref;
-                }
-            }
-            refMap[mod.name] = itemMap;
-        }
+        const refMap = buildTableRefMap();
 
         // Enrich database items with table_ref
         const modules = dbModules
@@ -412,6 +429,235 @@ app.post('/api/record/:recordId/image/delete', async (req, res) => {
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('Record image delete error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ========== Product Version (Snapshot) APIs ==========
+
+// Create a new version snapshot of the current product state
+app.post('/api/product/:asin/version', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const { version_name } = req.body;
+        const product = await queryOne('SELECT * FROM products WHERE asin = ?', [asin]);
+        if (!product) return res.status(404).json({ error: '产品不存在' });
+
+        const allModules = await getModulesWithItems();
+        const records = await queryAll('SELECT * FROM product_sop_records WHERE product_id = ?', [product.id]);
+        const recordMap = {};
+        for (const r of records) recordMap[r.sop_item_id] = r;
+
+        // Enrich items with table_ref so the version view can identify fields by data source
+        const refMap = buildTableRefMap();
+        const modulesData = allModules.map(m => {
+            const itemRefs = refMap[m.name] || {};
+            return {
+                id: m.id,
+                name: m.name,
+                sort_order: m.sort_order,
+                sop_items: m.sop_items.map(it => ({
+                    id: it.id,
+                    name: it.name,
+                    instruction_text: it.instruction_text,
+                    sort_order: it.sort_order,
+                    is_data_column: it.is_data_column,
+                    image_url: it.image_url,
+                    table_ref: itemRefs[it.name] || null,
+                    record: recordMap[it.id] ? {
+                        status: recordMap[it.id].status,
+                        remark: recordMap[it.id].remark || '',
+                        image_url: recordMap[it.id].image_url || null
+                    } : { status: '待处理', remark: '', image_url: null }
+                }))
+            };
+        });
+
+        const snapshot = {
+            product: {
+                name: product.name,
+                category: product.category,
+                status: product.status,
+                overall_progress: product.overall_progress
+            },
+            modules: modulesData
+        };
+
+        // Determine next version number
+        const maxRow = await queryOne(
+            'SELECT MAX(version_number) as mx FROM product_versions WHERE product_id = ?',
+            [product.id]
+        );
+        const nextVersion = (maxRow && maxRow.mx ? maxRow.mx : 0) + 1;
+
+        await runSql(
+            'INSERT INTO product_versions (product_id, version_number, version_name, snapshot_data) VALUES (?, ?, ?, ?)',
+            [product.id, nextVersion, version_name || null, JSON.stringify(snapshot)]
+        );
+        const newVer = await queryOne(
+            'SELECT id, version_number, version_name, created_at FROM product_versions WHERE product_id = ? ORDER BY version_number DESC LIMIT 1',
+            [product.id]
+        );
+        res.json({ status: 'ok', version: newVer });
+    } catch (e) {
+        console.error('Version create error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// List all versions of a product
+app.get('/api/product/:asin/versions', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+        if (!product) return res.status(404).json({ error: '产品不存在' });
+        const versions = await queryAll(
+            'SELECT id, version_number, version_name, created_at, updated_at FROM product_versions WHERE product_id = ? ORDER BY version_number DESC',
+            [product.id]
+        );
+        res.json({ versions });
+    } catch (e) {
+        console.error('Version list error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Delete a version
+app.delete('/api/version/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await runSql('DELETE FROM product_versions WHERE id = ?', [id]);
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Version delete error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Rename a version
+app.patch('/api/version/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { version_name } = req.body;
+        await runSql('UPDATE product_versions SET version_name = ?, updated_at = NOW() WHERE id = ?', [version_name || null, id]);
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Version rename error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Render a single version as a page
+app.get('/product/:asin/version/:versionId', async (req, res) => {
+    try {
+        const { asin, versionId } = req.params;
+        const product = await queryOne('SELECT * FROM products WHERE asin = ?', [asin]);
+        if (!product) return res.status(404).send('Product not found');
+
+        const version = await queryOne(
+            'SELECT * FROM product_versions WHERE id = ? AND product_id = ?',
+            [versionId, product.id]
+        );
+        if (!version) return res.status(404).send('版本不存在');
+
+        let snapshot;
+        try { snapshot = JSON.parse(version.snapshot_data); } catch (e) { snapshot = { modules: [] }; }
+
+        // Filter out 基础信息 (sort_order=1) from rendering, like the regular product page
+        const modules = (snapshot.modules || []).filter(m => m.sort_order > 1);
+
+        // Re-build recordMap from snapshot for template compatibility
+        const recordMap = {};
+        for (const m of snapshot.modules || []) {
+            for (const it of m.sop_items || []) {
+                recordMap[it.id] = {
+                    id: 'v_' + version.id + '_' + it.id, // synthetic id, prefixed so it can't clash
+                    status: it.record?.status || '待处理',
+                    remark: it.record?.remark || '',
+                    image_url: it.record?.image_url || null
+                };
+            }
+        }
+
+        // Calculate module progress based on snapshot
+        const moduleProgress = {};
+        for (const m of snapshot.modules || []) {
+            let total = 0, completed = 0;
+            for (const it of m.sop_items || []) {
+                if (!it.is_data_column) {
+                    total++;
+                    if ((it.record?.status) === '已完成') completed++;
+                }
+            }
+            moduleProgress[m.id] = {
+                completed, total,
+                percentage: total > 0 ? Math.round(completed / total * 10000) / 10000 : 0
+            };
+        }
+
+        // Build a virtual product object reflecting snapshot
+        const virtualProduct = {
+            ...product,
+            name: snapshot.product?.name ?? product.name,
+            category: snapshot.product?.category ?? product.category,
+            status: snapshot.product?.status ?? product.status,
+            overall_progress: snapshot.product?.overall_progress ?? product.overall_progress
+        };
+
+        res.render('product_version', {
+            product: virtualProduct,
+            originalProduct: product,
+            modules, recordMap, moduleProgress,
+            version: {
+                id: version.id,
+                version_number: version.version_number,
+                version_name: version.version_name,
+                created_at: version.created_at,
+                updated_at: version.updated_at
+            },
+            title: `${product.name || product.asin} - 版本 V${version.version_number}`
+        });
+    } catch (e) {
+        console.error('Version view error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+// Update a record inside a version snapshot
+app.patch('/api/version/:versionId/item/:itemId', async (req, res) => {
+    try {
+        const { versionId, itemId } = req.params;
+        const { status, remark, image_url } = req.body;
+
+        const ver = await queryOne('SELECT * FROM product_versions WHERE id = ?', [versionId]);
+        if (!ver) return res.status(404).json({ error: '版本不存在' });
+
+        let snapshot;
+        try { snapshot = JSON.parse(ver.snapshot_data); } catch (e) { snapshot = { modules: [] }; }
+
+        let found = false;
+        for (const m of snapshot.modules || []) {
+            for (const it of m.sop_items || []) {
+                if (String(it.id) === String(itemId)) {
+                    it.record = it.record || { status: '待处理', remark: '', image_url: null };
+                    if (status !== undefined) it.record.status = status;
+                    if (remark !== undefined) it.record.remark = remark;
+                    if (image_url !== undefined) it.record.image_url = image_url;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        if (!found) return res.status(404).json({ error: 'SOP项不存在' });
+
+        await runSql(
+            'UPDATE product_versions SET snapshot_data = ?, updated_at = NOW() WHERE id = ?',
+            [JSON.stringify(snapshot), versionId]
+        );
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Version record update error:', e);
         res.status(500).json({ error: e.message });
     }
 });

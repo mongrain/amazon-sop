@@ -8,16 +8,16 @@
         <%- include('sidebar', { active: '' }) %>
         <main class="main-content">
             <div class="page-header">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div class="flex justify-between items-start">
                     <div>
                         <a href="/dashboard" class="back-link">&larr; 返回看板</a>
                         <h1><%= product.name || product.asin %></h1>
-                        <div class="product-meta" style="margin-top:6px;">
+                        <div class="product-meta mt-1.5">
                             <span class="meta-item">ASIN: <code><%= product.asin %></code></span>
                             <% if (product.category) { %><span class="meta-item">分类: <%= product.category %></span><% } %>
                             <% if (product.seq) { %><span class="meta-item">序号: <%= product.seq %></span><% } %>
                             <span class="meta-item">状态:
-                                <select class="status-select" style="padding:2px 8px; font-size:12px;" onchange="updateProductStatus('<%= product.asin %>', this.value)">
+                                <select class="status-select px-2 py-0.5 text-xs" onchange="updateProductStatus('<%= product.asin %>', this.value)">
                                     <% ['待处理', '进行中', '已完成', '跳过'].forEach(s => { %>
                                     <option value="<%= s %>" <%= product.status === s ? 'selected' : '' %>><%= s %></option>
                                     <% }) %>
@@ -25,13 +25,14 @@
                             </span>
                         </div>
                     </div>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        <div class="progress-bar" style="min-width:140px;">
+                    <div class="flex items-center gap-2">
+                        <div class="progress-bar min-w-[140px]">
                             <div class="progress-fill" id="overall-progress-fill" style="width: <%= Math.round(product.overall_progress * 100) %>%"></div>
                             <span class="progress-text" id="overall-progress-text"><%= Math.round(product.overall_progress * 100) %>%</span>
                         </div>
-                        <button class="btn-primary" onclick="openEditModal()" style="padding:6px 16px; font-size:13px;">编辑产品</button>
-                        <button class="btn-danger" onclick="deleteProduct()" style="padding:6px 16px;">删除产品</button>
+                        <button class="btn-secondary px-4 py-1.5 text-[13px]" onclick="openVersionModal()">版本管理</button>
+                        <button class="btn-primary px-4 py-1.5 text-[13px]" onclick="openEditModal()">编辑产品</button>
+                        <button class="btn-danger px-4 py-1.5" onclick="deleteProduct()">删除产品</button>
                     </div>
                 </div>
             </div>
@@ -46,10 +47,10 @@
                         <h2 class="sop-card-title"><%= module.name %></h2>
                         <span class="sop-card-count"><%= mp.completed %>/<%= mp.total %></span>
                     </div>
-                    <div style="padding:8px 18px 0; background:#fafafa; border-bottom:1px solid var(--border);">
-                        <div class="progress-bar" style="min-width:100%; height:16px;">
+                    <div class="pt-2 px-[18px] pb-0 bg-[#fafafa] border-b border-[#e4e7ed]">
+                        <div class="progress-bar min-w-full h-4">
                             <div class="progress-fill" style="width: <%= Math.round(mp.percentage * 100) %>%;"></div>
-                            <span class="progress-text" style="font-size:10px;"><%= Math.round(mp.percentage * 100) %>%</span>
+                            <span class="progress-text text-[10px]"><%= Math.round(mp.percentage * 100) %>%</span>
                         </div>
                     </div>
                     <div class="sop-card-body">
@@ -67,8 +68,8 @@
                                     <% const rec = recordMap[item.id] || { id: '', status: '待处理', remark: '', updated_at: null }; %>
                                     <div class="sop-data-item sop-data-field" data-item-id="<%= item.id %>">
                                         <div class="sop-data-item-label"><%= item.name %></div>
-                                        <% if (item.name === '更新时间') { %>
-                                        <span class="sop-field-time" title="随数据库自动更新"><%= rec.updated_at ? new Date(rec.updated_at).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).replace(/\//g, '-') : '暂无' %></span>
+                                        <% if (item.table_ref === 'product_sop_records.updated_at') { %>
+                                        <span class="sop-field-time" title="随保存自动更新"><%= rec.updated_at ? new Date(rec.updated_at).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).replace(/\//g, '-') : '暂无' %></span>
                                         <% } else { %>
                                         <textarea class="sop-field-textarea" rows="2"
                                                   placeholder="填写..."
@@ -97,14 +98,14 @@
                                         <div class="sop-action-item-header">
                                             <span class="sop-action-item-index">#<%= idx + 1 %></span>
                                             <span class="sop-action-item-name"><%= item.name %></span>
-                                            <select class="sop-status-select" style="margin-left:auto;" onchange="updateRecord(<%= rec.id %>, 'status', this.value)">
+                                            <select class="sop-status-select ml-auto" onchange="updateRecord(<%= rec.id %>, 'status', this.value)">
                                                 <% ['待处理', '进行中', '已完成', '跳过'].forEach(s => { %>
                                                 <option value="<%= s %>" <%= rec.status === s ? 'selected' : '' %>><%= s %></option>
                                                 <% }) %>
                                             </select>
                                         </div>
                                         <% if (item.instruction_text) { %>
-                                        <div class="sop-action-item-instruction" style="-webkit-line-clamp: 3; cursor:pointer; white-space:pre-wrap;" onclick="this.style.webkitLineClamp = this.style.webkitLineClamp === 'none' ? '3' : 'none'"><%= item.instruction_text %></div>
+                                        <div class="sop-action-item-instruction cursor-pointer whitespace-pre-wrap line-clamp-3" onclick="this.classList.toggle('line-clamp-3'); this.classList.toggle('line-clamp-none')"><%= item.instruction_text %></div>
                                         <% } %>
                                         <!-- 模板示例图片：默认？号，hover显示 -->
                                         <% if (item.image_url) { %>
@@ -128,7 +129,7 @@
                                         <div class="sop-action-footer">
                                             <label class="btn-upload-action" title="上传操作截图">
                                                 📷 上传截图
-                                                <input type="file" accept="image/*" style="display:none;" onchange="uploadActionImage(<%= rec.id %>, this)">
+                                                <input type="file" accept="image/*" class="hidden" onchange="uploadActionImage(<%= rec.id %>, this)">
                                             </label>
                                             <textarea class="sop-remark"
                                                       placeholder="备注..."
@@ -158,7 +159,7 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label>ASIN（不可修改）</label>
-                    <input type="text" id="editAsin" class="form-input" readonly style="background:#f5f5f5;">
+                    <input type="text" id="editAsin" class="form-input bg-[#f5f5f5]" readonly>
                 </div>
                 <div class="form-group">
                     <label>产品名称</label>
@@ -177,15 +178,41 @@
         </div>
     </div>
 
+    <!-- Version Management Modal -->
+    <div class="modal-overlay" id="versionModal" onclick="if(event.target===this)closeVersionModal()">
+        <div class="modal-box w-[560px] max-h-[80vh] flex flex-col">
+            <div class="modal-header">
+                <h3>版本管理</h3>
+                <button class="modal-close" onclick="closeVersionModal()">&times;</button>
+            </div>
+            <div class="modal-body overflow-y-auto flex-1">
+                <div class="flex items-end gap-2 mb-4 p-3 bg-[#f5f7fa] rounded-md">
+                    <div class="flex-1">
+                        <label class="block text-[13px] font-semibold mb-1.5">版本名称（可选）</label>
+                        <input type="text" id="newVersionName" class="form-input" placeholder="例如：初次优化、第二轮调整">
+                    </div>
+                    <button class="btn-submit" onclick="createVersion()">生成新版本</button>
+                </div>
+                <div class="modal-error" id="versionError"></div>
+                <div id="versionList" class="flex flex-col gap-2">
+                    <div class="text-center py-5 text-[#999]">加载中...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeVersionModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <script>
     function toggleGroup(header) {
         const body = header.nextElementSibling;
         const arrow = header.querySelector('.sop-group-arrow');
-        if (body.style.display === 'none') {
-            body.style.display = 'block';
+        if (body.classList.contains('hidden')) {
+            body.classList.remove('hidden');
             arrow.textContent = '▼';
         } else {
-            body.style.display = 'none';
+            body.classList.add('hidden');
             arrow.textContent = '▶';
         }
     }
@@ -314,6 +341,95 @@
             if (res.ok) {
                 window.location.href = '/dashboard';
             } else {
+                alert('删除失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('网络错误: ' + e.message);
+        }
+    }
+
+    // ========== Version Management ==========
+    function openVersionModal() {
+        document.getElementById('versionModal').classList.add('active');
+        document.getElementById('versionError').textContent = '';
+        document.getElementById('newVersionName').value = '';
+        loadVersions();
+    }
+    function closeVersionModal() {
+        document.getElementById('versionModal').classList.remove('active');
+    }
+    function fmtTime(t) {
+        if (!t) return '—';
+        const d = new Date(t);
+        const y = d.getFullYear();
+        const M = String(d.getMonth() + 1).padStart(2, '0');
+        const D = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0');
+        const m = String(d.getMinutes()).padStart(2, '0');
+        return `${y}-${M}-${D} ${h}:${m}`;
+    }
+    async function loadVersions() {
+        const list = document.getElementById('versionList');
+        list.innerHTML = '<div class="text-center py-5 text-[#999]">加载中...</div>';
+        try {
+            const res = await fetch('/api/product/<%= product.asin %>/versions');
+            const data = await res.json();
+            if (!res.ok) {
+                list.innerHTML = '<div class="text-center py-5 text-[#f56c6c]">' + (data.error || '加载失败') + '</div>';
+                return;
+            }
+            if (!data.versions || data.versions.length === 0) {
+                list.innerHTML = '<div class="text-center py-7 text-[#999]">暂无版本，点击"生成新版本"创建第一个版本</div>';
+                return;
+            }
+            list.innerHTML = data.versions.map(v => `
+                <div class="flex items-center gap-2.5 py-3 px-3.5 bg-[#fafafa] border border-[#e4e7ed] rounded-lg">
+                    <span class="inline-block min-w-[36px] px-2 py-0.5 text-center bg-[#409eff] text-white font-semibold rounded text-xs">V${v.version_number}</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[14px] font-semibold text-[#303133] mb-0.5">${v.version_name ? escapeHtml(v.version_name) : '<span class="text-[#909399] font-normal">(未命名)</span>'}</div>
+                        <div class="text-xs text-[#909399]">创建：${fmtTime(v.created_at)}${v.updated_at && v.updated_at !== v.created_at ? '　|　最后修改：' + fmtTime(v.updated_at) : ''}</div>
+                    </div>
+                    <a href="/product/<%= product.asin %>/version/${v.id}" class="btn-sm bg-[#409eff] text-white border-[#409eff]">查看/编辑</a>
+                    <button class="btn-icon w-7 h-7" onclick="deleteVersion(${v.id})" title="删除版本">×</button>
+                </div>
+            `).join('');
+        } catch (e) {
+            list.innerHTML = '<div class="text-center py-5 text-[#f56c6c]">加载失败: ' + e.message + '</div>';
+        }
+    }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    async function createVersion() {
+        const errEl = document.getElementById('versionError');
+        errEl.textContent = '';
+        const versionName = document.getElementById('newVersionName').value.trim();
+        try {
+            const res = await fetch('/api/product/<%= product.asin %>/version', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ version_name: versionName || null })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                errEl.textContent = data.error || '生成失败';
+                return;
+            }
+            document.getElementById('newVersionName').value = '';
+            loadVersions();
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+    async function deleteVersion(id) {
+        if (!confirm('确认删除此版本？此操作不可恢复。')) return;
+        try {
+            const res = await fetch('/api/version/' + id, { method: 'DELETE' });
+            if (res.ok) {
+                loadVersions();
+            } else {
+                const data = await res.json();
                 alert('删除失败: ' + (data.error || '未知错误'));
             }
         } catch (e) {

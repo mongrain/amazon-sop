@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 产品版本快照表（用于记录某个时间点的产品所有SOP内容，允许后续修改）
+CREATE TABLE IF NOT EXISTS product_versions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    version_number INT NOT NULL,
+    version_name VARCHAR(200) DEFAULT NULL,
+    snapshot_data LONGTEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_product_version (product_id, version_number),
+    INDEX idx_product (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================
 -- 初始化数据：12个模块，171项SOP子项
 -- ============================================
@@ -152,7 +166,7 @@ INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_co
 
 -- 广告管理 (模块ID=5)
 INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_column) VALUES
-(5, '更新日期', '', 62, 1),
+(5, '更新时间', '', 62, 1),
 (5, '自动广告数据', '曝光和前一个月变化对比', 63, 1),
 (5, '手动关键词广告', '曝光和前一个月变化对比', 64, 1),
 (5, '海王广告数据', '曝光/点击/花费/转化（曝光和前一个月变化对比）', 65, 1),
@@ -201,7 +215,7 @@ INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_co
 
 -- 站外推广 (模块ID=6)
 INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_column) VALUES
-(6, '日期', '', 108, 1),
+(6, '更新时间', '', 108, 1),
 (6, '站外站点', '', 109, 1),
 (6, 'RebateKey', '', 110, 1),
 (6, 'SNAGSHOUT', '', 111, 1),
@@ -214,7 +228,7 @@ INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_co
 
 -- 关联流量 (模块ID=7)
 INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_column) VALUES
-(7, '更新日期', '', 118, 1),
+(7, '更新时间', '', 118, 1),
 (7, '已A+关联', '', 119, 1),
 (7, 'POST计划表', '', 120, 1),
 (7, 'A+关联引流', '做好A+关联，通过关联页面引流', 121, 0),
@@ -229,7 +243,7 @@ INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_co
 
 -- 促销流量 (模块ID=8)
 INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_column) VALUES
-(8, '更新日期', '', 130, 1),
+(8, '更新时间', '', 130, 1),
 (8, '秒杀推荐', '', 131, 1),
 (8, '有无参考价', '', 132, 1),
 (8, '竞品价格分析', '竞品价格分析，把竞品的最高价、最低价、平均做统计并总结我们的价格是否有竞争力和是否需要调价', 133, 0),
@@ -254,7 +268,7 @@ INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_co
 
 -- 视觉优化 (模块ID=10)
 INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_column) VALUES
-(10, '更新日期', '', 149, 1),
+(10, '更新时间', '', 149, 1),
 (10, '转化率/浏览量/点击量', '查看产品的转化率，浏览量，点击量等数据', 150, 1),
 (10, '视频数量及顺序', '', 151, 1),
 (10, '视频标题', '', 152, 1),
@@ -278,5 +292,5 @@ INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_co
 
 -- 其它 (模块ID=11)
 INSERT INTO sop_items (module_id, name, instruction_text, sort_order, is_data_column) VALUES
-(11, '更新日期', '', 170, 1),
+(11, '更新时间', '', 170, 1),
 (11, '减少低效产品投入', '把不打算继续投放时间运营的产品减少广告投入--减bid减预算', 171, 0);

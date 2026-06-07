@@ -95,7 +95,7 @@ const modules = [
         sort_order: 5,
         name: '广告管理',
         items: [
-            { name: '更新日期', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
+            { name: '更新时间', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
             { name: '自动广告数据', table_ref: 'product_sop_records.remark', instruction_text: '曝光和前一个月变化对比', sort_order: ++sortOrder, is_data_column: true },
             { name: '手动关键词广告', table_ref: 'product_sop_records.remark', instruction_text: '曝光和前一个月变化对比', sort_order: ++sortOrder, is_data_column: true },
             { name: '海王广告数据', table_ref: 'product_sop_records.remark', instruction_text: '曝光/点击/花费/转化（曝光和前一个月变化对比）', sort_order: ++sortOrder, is_data_column: true },
@@ -147,7 +147,7 @@ const modules = [
         sort_order: 6,
         name: '站外推广',
         items: [
-            { name: '日期', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
+            { name: '更新时间', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
             { name: '站外站点', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: 'RebateKey', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: 'SNAGSHOUT', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
@@ -163,7 +163,7 @@ const modules = [
         sort_order: 7,
         name: '关联流量',
         items: [
-            { name: '更新日期', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
+            { name: '更新时间', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
             { name: '已A+关联', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: 'POST计划表', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: 'A+关联引流', instruction_text: '做好A+关联，通过关联页面引流', sort_order: ++sortOrder, is_data_column: false },
@@ -181,7 +181,7 @@ const modules = [
         sort_order: 8,
         name: '促销流量',
         items: [
-            { name: '更新日期', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
+            { name: '更新时间', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
             { name: '秒杀推荐', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: '有无参考价', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: '竞品价格分析', instruction_text: '竞品价格分析，把竞品的最高价、最低价、平均做统计并总结我们的价格是否有竞争力和是否需要调价', sort_order: ++sortOrder, is_data_column: false },
@@ -212,7 +212,7 @@ const modules = [
         sort_order: 10,
         name: '视觉优化',
         items: [
-            { name: '更新日期', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
+            { name: '更新时间', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
             { name: '转化率/浏览量/点击量', table_ref: 'product_sop_records.remark', instruction_text: '查看产品的转化率，浏览量，点击量等数据', sort_order: ++sortOrder, is_data_column: true },
             { name: '视频数量及顺序', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
             { name: '视频标题', table_ref: 'product_sop_records.remark', sort_order: ++sortOrder, is_data_column: true },
@@ -239,7 +239,7 @@ const modules = [
         sort_order: 11,
         name: '其它',
         items: [
-            { name: '更新日期', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
+            { name: '更新时间', table_ref: 'product_sop_records.updated_at', sort_order: ++sortOrder, is_data_column: true },
             { name: '减少低效产品投入', instruction_text: '把不打算继续投放时间运营的产品减少广告投入--减bid减预算', sort_order: ++sortOrder, is_data_column: false },
         ]
     },

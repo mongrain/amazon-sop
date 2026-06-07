@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head', { title: title }) %>
+    <style>
+    .version-banner {
+        background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
+        border: 1px solid #91d5ff;
+        border-radius: 8px;
+        padding: 12px 18px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .version-banner-icon {
+        font-size: 22px;
+    }
+    .version-banner-text {
+        flex: 1;
+        font-size: 13px;
+        color: #303133;
+        line-height: 1.6;
+    }
+    .version-banner-text strong { color: #409eff; }
+    .version-name-edit {
+        display: inline-block;
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+    .version-name-edit:hover { background: rgba(64,158,255,0.1); }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <%- include('sidebar', { active: '' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <a href="/product/<%= product.asin %>" class="back-link">&larr; 返回产品主页</a>
+                        <h1><%= product.name || product.asin %></h1>
+                        <div class="product-meta" style="margin-top:6px;">
+                            <span class="meta-item">ASIN: <code><%= product.asin %></code></span>
+                            <% if (product.category) { %><span class="meta-item">分类: <%= product.category %></span><% } %>
+                            <span class="meta-item">状态:
+                                <span class="status-badge status-<%= product.status %>"><%= product.status %></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <div class="progress-bar" style="min-width:140px;">
+                            <div class="progress-fill" id="overall-progress-fill" style="width: <%= Math.round(product.overall_progress * 100) %>%"></div>
+                            <span class="progress-text" id="overall-progress-text"><%= Math.round(product.overall_progress * 100) %>%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="version-banner">
+                <span class="version-banner-icon">📦</span>
+                <div class="version-banner-text">
+                    <strong>版本 V<%= version.version_number %></strong>
+                    <span class="version-name-edit" onclick="renameVersion()" title="点击修改版本名称">
+                        <%= version.version_name ? '· ' + version.version_name : '· (未命名，点击修改)' %>
+                    </span>
+                    <br>
+                    <span style="color:#909399; font-size:12px;">创建于 <%= new Date(version.created_at).toLocaleString('zh-CN') %><% if (version.updated_at && version.updated_at !== version.created_at) { %>　|　最后修改 <%= new Date(version.updated_at).toLocaleString('zh-CN') %><% } %></span>
+                </div>
+                <a href="/product/<%= product.asin %>" class="btn-secondary" style="padding:6px 16px; font-size:13px;">返回当前版本</a>
+            </div>
+
+            <div class="sop-grid">
+                <% modules.forEach(module => { %>
+                <% const mp = moduleProgress[module.id] || { completed: 0, total: 0, percentage: 0 }; %>
+                <% const dataItems = module.sop_items.filter(i => i.is_data_column); %>
+                <% const actionItems = module.sop_items.filter(i => !i.is_data_column); %>
+                <div class="sop-card">
+                    <div class="sop-card-header">
+                        <h2 class="sop-card-title"><%= module.name %></h2>
+                        <span class="sop-card-count"><%= mp.completed %>/<%= mp.total %></span>
+                    </div>
+                    <div style="padding:8px 18px 0; background:#fafafa; border-bottom:1px solid var(--border);">
+                        <div class="progress-bar" style="min-width:100%; height:16px;">
+                            <div class="progress-fill" style="width: <%= Math.round(mp.percentage * 100) %>%;"></div>
+                            <span class="progress-text" style="font-size:10px;"><%= Math.round(mp.percentage * 100) %>%</span>
+                        </div>
+                    </div>
+                    <div class="sop-card-body">
+                        <!-- 数据字段 -->
+                        <% if (dataItems.length > 0) { %>
+                        <div class="sop-group">
+                            <div class="sop-group-header sop-group-data-header" onclick="toggleGroup(this)">
+                                <span class="sop-group-arrow">▼</span>
+                                <span class="sop-group-badge type-data">数据字段</span>
+                                <span class="sop-group-count"><%= dataItems.length %> 项</span>
+                            </div>
+                            <div class="sop-group-body">
+                                <div class="sop-items-grid">
+                                    <% dataItems.forEach(item => { %>
+                                    <% const rec = recordMap[item.id] || { id: '', status: '待处理', remark: '', updated_at: null }; %>
+                                    <div class="sop-data-item sop-data-field" data-item-id="<%= item.id %>">
+                                        <div class="sop-data-item-label"><%= item.name %></div>
+                                        <% if (item.table_ref === 'product_sop_records.updated_at') { %>
+                                        <span class="sop-field-time" title="随保存自动更新"><%= rec.updated_at ? new Date(rec.updated_at).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).replace(/\//g, '-') : '暂无' %></span>
+                                        <% } else { %>
+                                        <textarea class="sop-field-textarea" rows="2"
+                                                  placeholder="填写..."
+                                                  onblur="updateVersionRecord('<%= version.id %>', '<%= item.id %>', 'remark', this.value)"><%= rec.remark || '' %></textarea>
+                                        <% } %>
+                                    </div>
+                                    <% }) %>
+                                </div>
+                            </div>
+                        </div>
+                        <% } %>
+
+                        <!-- 操作项 -->
+                        <% if (actionItems.length > 0) { %>
+                        <div class="sop-group">
+                            <div class="sop-group-header sop-group-action-header" onclick="toggleGroup(this)">
+                                <span class="sop-group-arrow">▼</span>
+                                <span class="sop-group-badge type-action">操作项</span>
+                                <span class="sop-group-count"><%= actionItems.length %> 项</span>
+                            </div>
+                            <div class="sop-group-body">
+                                <div class="sop-items-list">
+                                    <% actionItems.forEach((item, idx) => { %>
+                                    <% const rec = recordMap[item.id] || { id: '', status: '待处理', remark: '', image_url: '' }; %>
+                                    <div class="sop-action-item" id="sop-item-<%= item.id %>">
+                                        <div class="sop-action-item-header">
+                                            <span class="sop-action-item-index">#<%= idx + 1 %></span>
+                                            <span class="sop-action-item-name"><%= item.name %></span>
+                                            <select class="sop-status-select" style="margin-left:auto;" onchange="updateVersionRecord('<%= version.id %>', '<%= item.id %>', 'status', this.value)">
+                                                <% ['待处理', '进行中', '已完成', '跳过'].forEach(s => { %>
+                                                <option value="<%= s %>" <%= rec.status === s ? 'selected' : '' %>><%= s %></option>
+                                                <% }) %>
+                                            </select>
+                                        </div>
+                                        <% if (item.instruction_text) { %>
+                                        <div class="sop-action-item-instruction" style="-webkit-line-clamp: 3; cursor:pointer; white-space:pre-wrap;" onclick="this.style.webkitLineClamp = this.style.webkitLineClamp === 'none' ? '3' : 'none'"><%= item.instruction_text %></div>
+                                        <% } %>
+                                        <% if (item.image_url) { %>
+                                        <div class="sop-example-image sop-example-thumb">
+                                            <img src="<%= item.image_url %>" alt="示例图片" class="zoomable" onclick="openViewer(this.src)">
+                                        </div>
+                                        <% } %>
+                                        <% if (rec.image_url) { %>
+                                        <div class="sop-action-uploaded-images">
+                                            <% let uploadedUrls = []; %>
+                                            <% try { uploadedUrls = JSON.parse(rec.image_url); } catch(e) { uploadedUrls = [rec.image_url]; } %>
+                                            <% uploadedUrls.forEach(function(url) { %>
+                                            <div class="sop-action-uploaded-image">
+                                                <img src="<%= url %>" alt="操作图片" class="zoomable" onclick="openViewer(this.src)">
+                                            </div>
+                                            <% }) %>
+                                        </div>
+                                        <% } %>
+                                        <div class="sop-action-footer">
+                                            <textarea class="sop-remark"
+                                                      placeholder="备注..."
+                                                      onblur="updateVersionRecord('<%= version.id %>', '<%= item.id %>', 'remark', this.value)"
+                                                      rows="1"><%= rec.remark || '' %></textarea>
+                                        </div>
+                                    </div>
+                                    <% }) %>
+                                </div>
+                            </div>
+                        </div>
+                        <% } %>
+                    </div>
+                </div>
+                <% }) %>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    function toggleGroup(header) {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.sop-group-arrow');
+        if (body.style.display === 'none') {
+            body.style.display = 'block';
+            arrow.textContent = '▼';
+        } else {
+            body.style.display = 'none';
+            arrow.textContent = '▶';
+        }
+    }
+
+    function updateVersionRecord(versionId, itemId, field, value) {
+        const data = {};
+        data[field] = value;
+        fetch('/api/version/' + versionId + '/item/' + itemId, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(r => {
+            if (r.ok) {
+                // Recalculate progress locally for the affected module
+                refreshVersionProgress();
+            }
+        }).catch(e => console.error('Update failed:', e));
+    }
+
+    function refreshVersionProgress() {
+        const selects = document.querySelectorAll('.sop-status-select');
+        let completed = 0, total = 0;
+        selects.forEach(sel => {
+            total++;
+            if (sel.value === '已完成') completed++;
+        });
+        const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+        const fill = document.getElementById('overall-progress-fill');
+        const txt = document.getElementById('overall-progress-text');
+        if (fill) fill.style.width = pct + '%';
+        if (txt) txt.textContent = pct + '%';
+    }
+
+    function renameVersion() {
+        const current = '<%= (version.version_name || "").replace(/'/g, "\\'") %>';
+        const newName = prompt('修改版本名称（留空则显示为"未命名"）：', current);
+        if (newName === null) return;
+        fetch('/api/version/<%= version.id %>', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ version_name: newName.trim() || null })
+        }).then(r => {
+            if (r.ok) location.reload();
+            else alert('修改失败');
+        });
+    }
+    </script>
+</body>
+</html>
