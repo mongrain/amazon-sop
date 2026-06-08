@@ -86,7 +86,7 @@ app.get('/dashboard', async (req, res) => {
             sql += " AND status = ?";
             params.push(status);
         }
-        sql += " ORDER BY updated_at DESC";
+        sql += " ORDER BY created_at ASC";
 
         let products = await queryAll(sql, params);
 

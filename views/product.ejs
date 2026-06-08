@@ -26,7 +26,7 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <div class="progress-bar min-w-[140px]">
+                        <div class="progress-bar mb-2 min-w-[140px]">
                             <div class="progress-fill" id="overall-progress-fill" style="width: <%= Math.round(product.overall_progress * 100) %>%"></div>
                             <span class="progress-text" id="overall-progress-text"><%= Math.round(product.overall_progress * 100) %>%</span>
                         </div>
@@ -48,7 +48,7 @@
                         <span class="sop-card-count"><%= mp.completed %>/<%= mp.total %></span>
                     </div>
                     <div class="pt-2 px-[18px] pb-0 bg-[#fafafa] border-b border-[#e4e7ed]">
-                        <div class="progress-bar min-w-full h-4">
+                        <div class="progress-bar mb-2 min-w-full h-4">
                             <div class="progress-fill" style="width: <%= Math.round(mp.percentage * 100) %>%;"></div>
                             <span class="progress-text text-[10px]"><%= Math.round(mp.percentage * 100) %>%</span>
                         </div>
@@ -71,9 +71,9 @@
                                         <% if (item.table_ref === 'product_sop_records.updated_at') { %>
                                         <span class="sop-field-time" title="随保存自动更新"><%= rec.updated_at ? new Date(rec.updated_at).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).replace(/\//g, '-') : '暂无' %></span>
                                         <% } else { %>
-                                        <textarea class="sop-field-textarea" rows="2"
+                                        <input class="sop-field-textarea" rows="1"
                                                   placeholder="填写..."
-                                                  onblur="updateRecord('<%= rec.id %>', 'remark', this.value)"><%= rec.remark || '' %></textarea>
+                                                  onblur="updateRecord('<%= rec.id %>', 'remark', this.value)" value="<%= rec.remark || '' %>" ></input>
                                         <% } %>
                                     </div>
                                     <% }) %>
@@ -128,11 +128,12 @@
                                         <% } %>
                                         <div class="sop-action-footer">
                                             <label class="btn-upload-action" title="上传操作截图">
-                                                📷 上传截图
+                                                📷 
                                                 <input type="file" accept="image/*" class="hidden" onchange="uploadActionImage(<%= rec.id %>, this)">
                                             </label>
                                             <textarea class="sop-remark"
                                                       placeholder="备注..."
+                                                      data-record-id="<%= rec.id %>"
                                                       onblur="updateRecord(<%= rec.id %>, 'remark', this.value)"
                                                       rows="1"><%= rec.remark || '' %></textarea>
                                         </div>
@@ -246,10 +247,10 @@
         });
     }
 
-    async function uploadActionImage(recordId, input) {
-        if (!input.files[0] || !recordId) return;
+    async function uploadActionImageFile(recordId, file) {
+        if (!file || !recordId) return;
         const formData = new FormData();
-        formData.append('image', input.files[0]);
+        formData.append('image', file);
         try {
             const res = await fetch('/api/record/' + recordId + '/image', {
                 method: 'POST',
@@ -265,6 +266,45 @@
             alert('上传失败: ' + e.message);
         }
     }
+
+    async function uploadActionImage(recordId, input) {
+        if (!input.files[0] || !recordId) return;
+        return uploadActionImageFile(recordId, input.files[0]);
+    }
+
+    document.addEventListener('paste', async function(e) {
+        const target = e.target;
+        if (!target || !target.classList || !target.classList.contains('sop-remark')) return;
+
+        const recordId = target.dataset.recordId;
+        if (!recordId) return;
+        if (target.dataset.pasteUploading === '1') return;
+
+        const cd = e.clipboardData;
+        if (!cd || !cd.items) return;
+
+        let imageItem = null;
+        for (const it of cd.items) {
+            if (it && typeof it.type === 'string' && it.type.startsWith('image/')) {
+                imageItem = it;
+                break;
+            }
+        }
+        if (!imageItem) return;
+
+        const text = (cd.getData && (cd.getData('text/plain') || cd.getData('text'))) || '';
+        if (!text) e.preventDefault();
+
+        const file = imageItem.getAsFile && imageItem.getAsFile();
+        if (!file) return;
+
+        try {
+            target.dataset.pasteUploading = '1';
+            await uploadActionImageFile(recordId, file);
+        } finally {
+            target.dataset.pasteUploading = '0';
+        }
+    });
 
     async function deleteActionImage(recordId, imageUrl) {
         if (!confirm('确认删除此图片？')) return;
