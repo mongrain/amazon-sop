@@ -137,7 +137,11 @@
                 </div>
                 <div class="form-group">
                     <label>分类</label>
-                    <input type="text" id="addCategory" class="form-input" placeholder="可选">
+                    <select id="addCategory" class="form-input">
+                        <option value="">可选</option>
+                        <option value="非婴儿类">非婴儿类</option>
+                        <option value="婴儿类">婴儿类</option>
+                    </select>
                 </div>
                 <div class="modal-error" id="addError"></div>
             </div>
@@ -166,7 +170,11 @@
                 </div>
                 <div class="form-group">
                     <label>分类</label>
-                    <input type="text" id="editCategory" class="form-input">
+                    <select id="editCategory" class="form-input">
+                        <option value="">可选</option>
+                        <option value="非婴儿类">非婴儿类</option>
+                        <option value="婴儿类">婴儿类</option>
+                    </select>
                 </div>
                 <div class="modal-error" id="editError"></div>
             </div>
@@ -218,7 +226,15 @@
     function openEditModal(asin, name, category) {
         document.getElementById('editAsin').value = asin;
         document.getElementById('editName').value = name || '';
-        document.getElementById('editCategory').value = category || '';
+        const catSelect = document.getElementById('editCategory');
+        const catVal = category || '';
+        if (catVal && !Array.from(catSelect.options).some(o => o.value === catVal)) {
+            const opt = document.createElement('option');
+            opt.value = catVal;
+            opt.textContent = catVal;
+            catSelect.appendChild(opt);
+        }
+        catSelect.value = catVal;
         document.getElementById('editError').textContent = '';
         document.getElementById('editModal').classList.add('active');
     }
