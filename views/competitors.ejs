@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+</head>
+<body>
+    <div class="app">
+        <%- include('sidebar', { active: 'competitors' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <h1>竞品库</h1>
+                        <div class="page-desc">用于维护竞品品牌与亚马逊商店链接（支持新增/修改/删除）</div>
+                        <form action="/competitors" method="GET" class="search-form" style="margin-top:12px;">
+                            <input
+                                type="text"
+                                name="keyword"
+                                class="search-input"
+                                placeholder="查询品牌名称"
+                                value="<%= keyword || '' %>"
+                            >
+                            <button type="submit" class="btn-secondary" style="padding:8px 16px;">查询</button>
+                            <% if (keyword) { %>
+                                <a href="/competitors" class="btn-secondary" style="padding:8px 16px;">重置</a>
+                            <% } %>
+                        </form>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <button class="btn-secondary" onclick="importCompetitors()">从Excel导入</button>
+                        <button class="btn-primary" onclick="openAddModal()">+ 新增竞品</button>
+                    </div>
+                </div>
+            </div>
+
+            <% function fmt(dt){ if(!dt) return '-'; const d = (dt instanceof Date) ? dt : new Date(dt); if (isNaN(d.getTime())) return String(dt); return d.toLocaleString('zh-CN', { hour12: false }); } %>
+
+            <div class="table-container">
+                <table class="product-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width:50px">#</th>
+                            <th style="min-width:220px">品牌名</th>
+                            <th style="min-width:220px">品牌分类</th>
+                            <th style="min-width:180px">更新时间</th>
+                            <th style="min-width:360px">最近2次动作</th>
+                            <th style="min-width:160px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (!competitors || competitors.length === 0) { %>
+                        <tr>
+                            <td colspan="7" style="text-align:center; padding:40px; color:#999;">
+                                <%= keyword ? ('未找到品牌名包含“' + keyword + '”的竞品') : '暂无竞品数据，可点击右上角“新增竞品”' %>
+                            </td>
+                        </tr>
+                        <% } %>
+
+                        <% (competitors || []).forEach((c, idx) => { %>
+                        <tr>
+                            <td><%= idx + 1 %></td>
+                            <td>
+                               <% if (c.amazon_store_url) { %>
+                                    <%= c.brand_name %>
+                                    <a href="<%= c.amazon_store_url %>" target="_blank" rel="noreferrer" style="color:var(--primary); text-decoration:none;">
+                                        查看
+                                    </a>
+                                <% } else { %>
+                                    <%= c.brand_name %>
+                                <% } %>
+                            </td>
+                            <td><%= c.brand_category || '-' %></td>
+                            <td><%= fmt(c.updated_at) %></td>
+                            <td style="max-width:520px;">
+                                <% const acts = (typeof recentActions !== 'undefined' && recentActions && recentActions[c.id]) ? recentActions[c.id] : []; %>
+                                <% if (!acts || acts.length === 0) { %>
+                                    <span style="color:var(--text-secondary);">-</span>
+                                <% } else { %>
+                                    <div style="display:flex; flex-direction:column; gap:6px;">
+                                        <% acts.forEach(a => { %>
+                                            <div style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:#fafafa;">
+                                                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;"><%= fmt(a.created_at) %></div>
+                                                <div style="font-size:13px; white-space:pre-wrap; word-break:break-word;"><%= a.action_text %></div>
+                                            </div>
+                                        <% }) %>
+                                    </div>
+                                <% } %>
+                            </td>
+                            <td>
+                                <div style="display:flex; gap:6px;">
+                                    <button class="btn-sm whitespace-nowrap" data-id="<%= c.id %>" data-brand="<%= c.brand_name %>" onclick="openActionModal(this.dataset.id, this.dataset.brand)">追加动作</button>
+                                    <button class="btn-sm whitespace-nowrap" data-id="<%= c.id %>" data-brand="<%= c.brand_name %>" data-category="<%= c.brand_category || '' %>" data-url="<%= c.amazon_store_url || '' %>" onclick="openEditModal(this.dataset.id, this.dataset.brand, this.dataset.category, this.dataset.url)">编辑</button>
+                                    <button class="btn-sm whitespace-nowrap" onclick="deleteCompetitor('<%= c.id %>')" style="color:var(--danger);border-color:var(--danger);">删除</button>
+                                </div>
+                            </td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="addModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>新增竞品</h3>
+                <button class="modal-close" onclick="closeModal('addModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="required">品牌名</label>
+                    <input type="text" id="addBrandName" class="form-input" placeholder="例如：BrandX">
+                </div>
+                <div class="form-group">
+                    <label>品牌分类</label>
+                    <input type="text" id="addBrandCategory" class="form-input" placeholder="例如：母婴/厨房小家电/家居清洁...">
+                </div>
+                <div class="form-group">
+                    <label>亚马逊商店链接</label>
+                    <input type="text" id="addStoreUrl" class="form-input" placeholder="例如：https://www.amazon.com/stores/page/xxxx">
+                </div>
+                <div class="modal-error" id="addError"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('addModal')">取消</button>
+                <button class="btn-submit" onclick="addCompetitor()">确认新增</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="editModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>编辑竞品</h3>
+                <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editId">
+                <div class="form-group">
+                    <label class="required">品牌名</label>
+                    <input type="text" id="editBrandName" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>品牌分类</label>
+                    <input type="text" id="editBrandCategory" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>亚马逊商店链接</label>
+                    <input type="text" id="editStoreUrl" class="form-input">
+                </div>
+                <div class="modal-error" id="editError"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('editModal')">取消</button>
+                <button class="btn-submit" onclick="saveEditCompetitor()">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="actionModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>追加动作</h3>
+                <button class="modal-close" onclick="closeModal('actionModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="actionCompetitorId">
+                <div class="form-group">
+                    <label>竞品</label>
+                    <input type="text" id="actionBrandName" class="form-input" readonly style="background:#f5f5f5;">
+                </div>
+                <div class="form-group">
+                    <label class="required">动作内容</label>
+                    <textarea id="actionText" class="form-input" style="min-height:110px; resize:vertical;" placeholder="例如：2026-06-10 复盘竞品A+，记录其主图卖点结构并对照我们的页面"></textarea>
+                </div>
+                <div class="modal-error" id="actionError"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('actionModal')">取消</button>
+                <button class="btn-submit" onclick="addAction()">确认追加</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function openAddModal() {
+        document.getElementById('addBrandName').value = '';
+        document.getElementById('addBrandCategory').value = '';
+        document.getElementById('addStoreUrl').value = '';
+        document.getElementById('addError').textContent = '';
+        document.getElementById('addModal').classList.add('active');
+    }
+
+    function openActionModal(id, brandName) {
+        document.getElementById('actionCompetitorId').value = id;
+        document.getElementById('actionBrandName').value = brandName || '';
+        document.getElementById('actionText').value = '';
+        document.getElementById('actionError').textContent = '';
+        document.getElementById('actionModal').classList.add('active');
+        setTimeout(() => {
+            const el = document.getElementById('actionText');
+            if (el) el.focus();
+        }, 0);
+    }
+
+    function openEditModal(id, brandName, brandCategory, storeUrl) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editBrandName').value = brandName || '';
+        document.getElementById('editBrandCategory').value = brandCategory || '';
+        document.getElementById('editStoreUrl').value = storeUrl || '';
+        document.getElementById('editError').textContent = '';
+        document.getElementById('editModal').classList.add('active');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    async function importCompetitors() {
+        if (!confirm('将从 public/竞对信息.xlsx 导入竞品信息，确认继续？')) return;
+        try {
+            const res = await fetch('/api/competitors/import', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                const errCount = (data.errors && data.errors.length) ? data.errors.length : 0;
+                let msg = `导入完成（sheet: ${data.sheet || '-'}）\n新增: ${data.inserted || 0}\n更新: ${data.updated || 0}\n追加动作: ${data.actions_added || 0}\n跳过空行: ${data.skipped || 0}\n错误: ${errCount}`;
+                if (errCount > 0) {
+                    const preview = data.errors.slice(0, 5).map(e => `第${e.row}行：${e.error}`).join('\n');
+                    msg += `\n\n前5条错误:\n${preview}`;
+                }
+                alert(msg);
+                location.reload();
+            } else {
+                alert(data.error || '导入失败');
+            }
+        } catch (e) {
+            alert('网络错误: ' + e.message);
+        }
+    }
+
+    async function addAction() {
+        const competitorId = document.getElementById('actionCompetitorId').value.trim();
+        const action_text = document.getElementById('actionText').value.trim();
+        const errEl = document.getElementById('actionError');
+        errEl.textContent = '';
+
+        if (!competitorId) { errEl.textContent = 'ID 缺失'; return; }
+        if (!action_text) { errEl.textContent = '动作内容为必填项'; return; }
+
+        try {
+            const res = await fetch('/api/competitor/' + encodeURIComponent(competitorId) + '/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action_text })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                closeModal('actionModal');
+                location.reload();
+            } else {
+                errEl.textContent = data.error || '追加失败';
+            }
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+
+    async function addCompetitor() {
+        const brand_name = document.getElementById('addBrandName').value.trim();
+        const brand_category = document.getElementById('addBrandCategory').value.trim();
+        const amazon_store_url = document.getElementById('addStoreUrl').value.trim();
+        const errEl = document.getElementById('addError');
+        errEl.textContent = '';
+
+        if (!brand_name) { errEl.textContent = '品牌名为必填项'; return; }
+
+        try {
+            const res = await fetch('/api/competitor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ brand_name, brand_category, amazon_store_url })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                errEl.textContent = data.error || '新增失败';
+            }
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+
+    async function saveEditCompetitor() {
+        const id = document.getElementById('editId').value.trim();
+        const brand_name = document.getElementById('editBrandName').value.trim();
+        const brand_category = document.getElementById('editBrandCategory').value.trim();
+        const amazon_store_url = document.getElementById('editStoreUrl').value.trim();
+        const errEl = document.getElementById('editError');
+        errEl.textContent = '';
+
+        if (!id) { errEl.textContent = 'ID 缺失'; return; }
+        if (!brand_name) { errEl.textContent = '品牌名为必填项'; return; }
+
+        try {
+            const res = await fetch('/api/competitor/' + encodeURIComponent(id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ brand_name, brand_category, amazon_store_url })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                closeModal('editModal');
+                location.reload();
+            } else {
+                errEl.textContent = data.error || '保存失败';
+            }
+        } catch (e) {
+            errEl.textContent = '网络错误: ' + e.message;
+        }
+    }
+
+    async function deleteCompetitor(id) {
+        if (!id) return;
+        if (!confirm('确认删除该竞品？')) return;
+        try {
+            const res = await fetch('/api/competitor/' + encodeURIComponent(id), { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert(data.error || '删除失败');
+            }
+        } catch (e) {
+            alert('网络错误: ' + e.message);
+        }
+    }
+    </script>
+</body>
+</html>

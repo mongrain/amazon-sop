@@ -1,6 +1,8 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const XLSX = require('xlsx');
 const { initDb, queryAll, queryOne, runSql, getModulesWithItems, getModuleProgress, calculateProgress, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
 const { importExcel, EXCEL_PATH } = require('./importer');
 const sopData = require('./sop-data');
@@ -196,6 +198,35 @@ app.post('/import', async (req, res) => {
     res.render('import_page', { result, import_path: EXCEL_PATH, title: '导入数据' });
 });
 
+app.get('/competitors', async (req, res) => {
+    try {
+        const keyword = String(req.query.keyword || '').trim();
+        const sql = keyword
+            ? 'SELECT * FROM competitors WHERE brand_name LIKE ? ORDER BY updated_at DESC, id DESC'
+            : 'SELECT * FROM competitors ORDER BY updated_at DESC, id DESC';
+        const params = keyword ? [`%${keyword}%`] : [];
+        const competitors = await queryAll(sql, params);
+        const recentActions = {};
+        if (competitors.length > 0) {
+            const ids = competitors.map(c => c.id);
+            const placeholders = ids.map(() => '?').join(',');
+            const actions = await queryAll(
+                `SELECT id, competitor_id, action_text, created_at FROM competitor_actions WHERE competitor_id IN (${placeholders}) ORDER BY competitor_id ASC, created_at DESC, id DESC`,
+                ids
+            );
+            for (const a of actions) {
+                const cid = a.competitor_id;
+                if (!recentActions[cid]) recentActions[cid] = [];
+                if (recentActions[cid].length < 2) recentActions[cid].push(a);
+            }
+        }
+        res.render('competitors', { competitors, recentActions, keyword, title: '竞品库' });
+    } catch (e) {
+        console.error('Competitors page error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
 // ========== API Endpoints ==========
 
 app.patch('/api/record/:recordId', async (req, res) => {
@@ -231,6 +262,207 @@ app.patch('/api/record/:recordId', async (req, res) => {
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('API record update error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ========== Competitors CRUD ==========
+
+function normalizeUrl(url) {
+    if (!url) return null;
+    const trimmed = String(url).trim();
+    if (!trimmed) return null;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) return trimmed;
+    return 'https://' + trimmed;
+}
+
+function decodeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .trim();
+}
+
+const COMPETITOR_IMPORT_PATH = path.join(__dirname, 'public', '竞对信息.xlsx');
+
+app.post('/api/competitors/import', async (req, res) => {
+    try {
+        if (!fs.existsSync(COMPETITOR_IMPORT_PATH)) {
+            return res.status(404).json({ error: '未找到 public/竞对信息.xlsx' });
+        }
+
+        const wb = XLSX.readFile(COMPETITOR_IMPORT_PATH);
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        let inserted = 0;
+        let updated = 0;
+        let actions_added = 0;
+        let skipped = 0;
+        const errors = [];
+
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i] || [];
+            const brand_name = String(row[0] || '').trim();
+            const brand_category = String(row[1] || '').trim();
+            const amazon_store_url = decodeHtml(row[2] || '');
+            const recent_action = String(row[3] || '').trim();
+
+            if (!brand_name) { skipped++; continue; }
+            if (brand_name.length > 200) { errors.push({ row: i + 1, error: '品牌名过长' }); continue; }
+            if (brand_category && brand_category.length > 200) { errors.push({ row: i + 1, error: '品牌分类过长' }); continue; }
+
+            const url = normalizeUrl(amazon_store_url);
+            if (url && url.length > 1000) { errors.push({ row: i + 1, error: '链接过长' }); continue; }
+
+            const existing = await queryOne('SELECT id FROM competitors WHERE brand_name = ? ORDER BY id DESC LIMIT 1', [brand_name]);
+            let competitorId;
+
+            if (existing) {
+                competitorId = existing.id;
+                const sets = [];
+                const params = [];
+                if (brand_category) { sets.push('brand_category = ?'); params.push(brand_category); }
+                if (url) { sets.push('amazon_store_url = ?'); params.push(url); }
+                if (sets.length > 0) {
+                    sets.push('updated_at = NOW()');
+                    params.push(competitorId);
+                    await runSql(`UPDATE competitors SET ${sets.join(', ')} WHERE id = ?`, params);
+                }
+                updated++;
+            } else {
+                const r = await runSql(
+                    'INSERT INTO competitors (brand_name, brand_category, amazon_store_url) VALUES (?, ?, ?)',
+                    [brand_name, brand_category || null, url]
+                );
+                competitorId = r && r.insertId ? r.insertId : null;
+                inserted++;
+            }
+
+            if (competitorId && recent_action) {
+                if (recent_action.length > 2000) {
+                    errors.push({ row: i + 1, error: '近期活动/动作过长' });
+                } else {
+                    await runSql(
+                        'INSERT INTO competitor_actions (competitor_id, action_text) VALUES (?, ?)',
+                        [competitorId, recent_action]
+                    );
+                    await runSql('UPDATE competitors SET updated_at = NOW() WHERE id = ?', [competitorId]);
+                    actions_added++;
+                }
+            }
+        }
+
+        res.json({ status: 'ok', sheet: sheetName, inserted, updated, actions_added, skipped, errors });
+    } catch (e) {
+        console.error('Competitors import error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/competitor', async (req, res) => {
+    try {
+        const { brand_name, brand_category, amazon_store_url } = req.body;
+        const bn = (brand_name || '').trim();
+        if (!bn) return res.status(400).json({ error: '品牌名为必填项' });
+        if (bn.length > 200) return res.status(400).json({ error: '品牌名过长（最多 200 字符）' });
+
+        const bc = (brand_category || '').trim() || null;
+        if (bc && bc.length > 200) return res.status(400).json({ error: '品牌分类过长（最多 200 字符）' });
+
+        const url = normalizeUrl(amazon_store_url);
+        if (url && url.length > 1000) return res.status(400).json({ error: '链接过长（最多 1000 字符）' });
+
+        await runSql(
+            'INSERT INTO competitors (brand_name, brand_category, amazon_store_url) VALUES (?, ?, ?)',
+            [bn, bc, url]
+        );
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Competitor create error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/competitor/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const existing = await queryOne('SELECT id FROM competitors WHERE id = ?', [id]);
+        if (!existing) return res.status(404).json({ error: '竞品不存在' });
+
+        const { brand_name, brand_category, amazon_store_url } = req.body;
+        const sets = [];
+        const params = [];
+
+        if (brand_name !== undefined) {
+            const bn = (brand_name || '').trim();
+            if (!bn) return res.status(400).json({ error: '品牌名为必填项' });
+            if (bn.length > 200) return res.status(400).json({ error: '品牌名过长（最多 200 字符）' });
+            sets.push('brand_name = ?');
+            params.push(bn);
+        }
+
+        if (brand_category !== undefined) {
+            const bc = (brand_category || '').trim() || null;
+            if (bc && bc.length > 200) return res.status(400).json({ error: '品牌分类过长（最多 200 字符）' });
+            sets.push('brand_category = ?');
+            params.push(bc);
+        }
+
+        if (amazon_store_url !== undefined) {
+            const url = normalizeUrl(amazon_store_url);
+            if (url && url.length > 1000) return res.status(400).json({ error: '链接过长（最多 1000 字符）' });
+            sets.push('amazon_store_url = ?');
+            params.push(url);
+        }
+
+        if (sets.length === 0) return res.json({ status: 'ok' });
+
+        sets.push('updated_at = NOW()');
+        params.push(id);
+        await runSql(`UPDATE competitors SET ${sets.join(', ')} WHERE id = ?`, params);
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Competitor update error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/competitor/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await runSql('DELETE FROM competitors WHERE id = ?', [id]);
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Competitor delete error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/competitor/:id/action', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const existing = await queryOne('SELECT id FROM competitors WHERE id = ?', [id]);
+        if (!existing) return res.status(404).json({ error: '竞品不存在' });
+
+        const { action_text } = req.body;
+        const at = (action_text || '').trim();
+        if (!at) return res.status(400).json({ error: '动作内容为必填项' });
+        if (at.length > 2000) return res.status(400).json({ error: '动作内容过长（最多 2000 字符）' });
+
+        await runSql(
+            'INSERT INTO competitor_actions (competitor_id, action_text) VALUES (?, ?)',
+            [id, at]
+        );
+        await runSql('UPDATE competitors SET updated_at = NOW() WHERE id = ?', [id]);
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Competitor action create error:', e);
         res.status(500).json({ error: e.message });
     }
 });

@@ -93,6 +93,29 @@ async function initDb() {
         // Silently skip
     }
 
+    // Ensure competitors table has brand_category (migration)
+    try {
+        await p.execute('ALTER TABLE competitors ADD COLUMN brand_category VARCHAR(200) DEFAULT NULL AFTER brand_name');
+    } catch (e) {
+        if (!e.message.includes('Duplicate column')) {
+            // Silently skip
+        }
+    }
+
+    // Ensure competitor_actions table exists (migration)
+    try {
+        await p.execute(`CREATE TABLE IF NOT EXISTS competitor_actions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            competitor_id INT NOT NULL,
+            action_text TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (competitor_id) REFERENCES competitors(id) ON DELETE CASCADE,
+            INDEX idx_competitor_created (competitor_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
     // Migration: unify "更新日期" / 站外推广"日期" to "更新时间"
     // The display name must match the field that auto-tracks product_sop_records.updated_at
     try {
@@ -153,7 +176,8 @@ async function queryOne(sql, params = []) {
 
 async function runSql(sql, params = []) {
     const pool = getPool();
-    await pool.execute(sql, params);
+    const [result] = await pool.execute(sql, params);
+    return result;
 }
 
 async function getModulesWithItems() {

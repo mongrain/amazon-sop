@@ -74,6 +74,26 @@ CREATE TABLE IF NOT EXISTS product_versions (
     INDEX idx_product (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 竞品表（用于记录竞品品牌与亚马逊商店链接）
+CREATE TABLE IF NOT EXISTS competitors (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    brand_name VARCHAR(200) NOT NULL,
+    brand_category VARCHAR(200) DEFAULT NULL,
+    amazon_store_url VARCHAR(1000) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_brand_name (brand_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS competitor_actions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    competitor_id INT NOT NULL,
+    action_text TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (competitor_id) REFERENCES competitors(id) ON DELETE CASCADE,
+    INDEX idx_competitor_created (competitor_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================
 -- 初始化数据：12个模块，171项SOP子项
 -- ============================================
