@@ -3,7 +3,18 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const XLSX = require('xlsx');
-const { initDb, queryAll, queryOne, runSql, getModulesWithItems, getModuleProgress, calculateProgress, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
+const {
+    initDb,
+    queryAll,
+    queryOne,
+    runSql,
+    getModulesWithItems,
+    getProductModuleProgressMap,
+    getModuleProgress,
+    calculateProgress,
+    ensureRecordsForProduct,
+    recalculateProductProgress
+} = require('./database');
 const { importExcel, EXCEL_PATH } = require('./importer');
 const sopData = require('./sop-data');
 
@@ -114,15 +125,24 @@ app.get('/dashboard', async (req, res) => {
         let sql = `SELECT id, asin, name, category, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY created_at ASC LIMIT ? OFFSET ?`;
         let products = await queryAll(sql, [...filterParams, pageSize, offset]);
 
-        // Enrich with module progress
-        products = await Promise.all(products.map(async (p) => {
-            const p2 = { ...p };
-            p2.module_progress = {};
-            for (const m of modules) {
-                p2.module_progress[m.id] = await getModuleProgress(p.id, m.id);
+        const progressMap = await getProductModuleProgressMap(products.map(product => product.id));
+
+        // Enrich with module progress using the batched result to avoid N+1 queries.
+        products = products.map(product => {
+            const moduleProgress = progressMap[product.id] || {};
+            const fullProgress = {};
+            for (const module of modules) {
+                fullProgress[module.id] = moduleProgress[module.id] || {
+                    completed: 0,
+                    total: 0,
+                    percentage: 0
+                };
             }
-            return p2;
-        }));
+            return {
+                ...product,
+                module_progress: fullProgress
+            };
+        });
 
         const categories = await queryAll('SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category');
 
@@ -172,9 +192,14 @@ app.get('/product/:asin', async (req, res) => {
         }
 
         // Calculate module progress (including 基础信息)
+        const progressMap = await getProductModuleProgressMap([product.id]);
         const moduleProgress = {};
         for (const m of allModules) {
-            moduleProgress[m.id] = await getModuleProgress(product.id, m.id);
+            moduleProgress[m.id] = (progressMap[product.id] && progressMap[product.id][m.id]) || {
+                completed: 0,
+                total: 0,
+                percentage: 0
+            };
         }
 
         res.render('product', {
@@ -236,7 +261,7 @@ app.get('/competitors', async (req, res) => {
 
         const params = keyword ? [`%${keyword}%`, pageSize, offset] : [pageSize, offset];
         const competitors = await queryAll(
-            `SELECT * FROM competitors ${whereSql} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+            `SELECT * FROM competitors ${whereSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
             params
         );
         const recentActions = {};

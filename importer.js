@@ -1,6 +1,6 @@
 const XLSX = require('xlsx');
 const path = require('path');
-const { queryOne, runSql, queryAll, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
+const { runSql, queryAll, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
 
 const EXCEL_PATH = path.join(__dirname, '..', '复核审核表.xlsx');
 
@@ -79,47 +79,49 @@ async function importExcel() {
 
         // Insert or update product (MySQL ON DUPLICATE KEY UPDATE)
         try {
-            await runSql(`
+            const productResult = await runSql(`
                 INSERT INTO products (seq, asin, name, category, excel_row)
                 VALUES (?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
+                    id = LAST_INSERT_ID(id),
                     name = VALUES(name),
                     category = VALUES(category),
                     excel_row = VALUES(excel_row),
                     updated_at = NOW()
             `, [String(seq), asinStr, String(name), String(category), json.indexOf(row) + 1]);
             stats.products_added++;
+            const productId = productResult && productResult.insertId ? productResult.insertId : null;
+            if (!productId) {
+                stats.errors.push(`ASIN ${asinStr}: 无法获取产品ID`);
+                continue;
+            }
+
+            // Ensure all SOP records exist for this product
+            await ensureRecordsForProduct(productId);
+
+            // Read cell values and map to sop_items
+            for (const [colIdx, sopItemId] of Object.entries(colToItemId)) {
+                const colIndex = parseInt(colIdx, 10);
+                const cellVal = row[colIndex];
+                if (cellVal !== undefined && cellVal !== '' && String(cellVal).trim()) {
+                    const cellText = String(cellVal).trim();
+                    const status = inferStatus(cellText);
+                    await runSql(`
+                        UPDATE product_sop_records SET
+                            status = COALESCE(?, status),
+                            remark = ?,
+                            updated_at = NOW()
+                        WHERE product_id = ? AND sop_item_id = ?
+                    `, [status, cellText, productId, sopItemId]);
+                    stats.records_created++;
+                }
+            }
+
+            await recalculateProductProgress(productId);
         } catch (e) {
             stats.errors.push(`ASIN ${asinStr}: ${e.message}`);
             continue;
         }
-
-        const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asinStr]);
-        if (!product) continue;
-        const productId = product.id;
-
-        // Ensure all SOP records exist for this product
-        await ensureRecordsForProduct(productId);
-
-        // Read cell values and map to sop_items
-        for (const [colIdx, sopItemId] of Object.entries(colToItemId)) {
-            const colIndex = parseInt(colIdx);
-            const cellVal = row[colIndex];
-            if (cellVal !== undefined && cellVal !== '' && String(cellVal).trim()) {
-                const cellText = String(cellVal).trim();
-                const status = inferStatus(cellText);
-                await runSql(`
-                    UPDATE product_sop_records SET
-                        status = COALESCE(?, status),
-                        remark = ?,
-                        updated_at = NOW()
-                    WHERE product_id = ? AND sop_item_id = ?
-                `, [status, cellText, productId, sopItemId]);
-                stats.records_created++;
-            }
-        }
-
-        await recalculateProductProgress(productId);
     }
 
     return stats;
