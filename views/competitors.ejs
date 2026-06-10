@@ -58,7 +58,7 @@
 
                         <% (competitors || []).forEach((c, idx) => { %>
                         <tr>
-                            <td><%= idx + 1 %></td>
+                            <td><%= (page - 1) * pageSize + idx + 1 %></td>
                             <td>
                                <% if (c.amazon_store_url) { %>
                                     <%= c.brand_name %>
@@ -73,17 +73,23 @@
                             <td><%= fmt(c.updated_at) %></td>
                             <td style="max-width:520px;">
                                 <% const acts = (typeof recentActions !== 'undefined' && recentActions && recentActions[c.id]) ? recentActions[c.id] : []; %>
+                                <% const totalCount = (typeof actionTotals !== 'undefined' && actionTotals) ? (actionTotals[c.id] || 0) : acts.length; %>
                                 <% if (!acts || acts.length === 0) { %>
                                     <span style="color:var(--text-secondary);">-</span>
                                 <% } else { %>
                                     <div style="display:flex; flex-direction:column; gap:6px;">
                                         <% acts.forEach(a => { %>
-                                            <div style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:#fafafa;">
+                                            <div>
                                                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;"><%= fmt(a.created_at) %></div>
                                                 <div style="font-size:13px; white-space:pre-wrap; word-break:break-word;"><%= a.action_text %></div>
                                             </div>
                                         <% }) %>
                                     </div>
+                                <% } %>
+                                <% if (totalCount > 2) { %>
+                                    <a href="javascript:void(0);" onclick="openAllActionsModal('<%= c.id %>', '<%= c.brand_name.replace(/'/g, "\\'") %>')" style="display:inline-block; margin-top:6px; font-size:12px; color:var(--primary); text-decoration:none;">
+                                        展开全部（<%= totalCount %>）
+                                    </a>
                                 <% } %>
                             </td>
                             <td>
@@ -98,6 +104,48 @@
                     </tbody>
                 </table>
             </div>
+
+            <% if (totalPages > 1 || total > 0) { %>
+                <%
+                    const buildPageHref = (p) => {
+                        const params = new URLSearchParams();
+                        if (keyword) params.set('keyword', keyword);
+                        if (p > 1) params.set('page', String(p));
+                        const qs = params.toString();
+                        return '/competitors' + (qs ? ('?' + qs) : '');
+                    };
+                    const startItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
+                    const endItem = Math.min(page * pageSize, total);
+                    const pageWindow = 5;
+                    let winStart = Math.max(1, page - Math.floor(pageWindow / 2));
+                    let winEnd = Math.min(totalPages, winStart + pageWindow - 1);
+                    if (winEnd - winStart < pageWindow - 1) {
+                        winStart = Math.max(1, winEnd - pageWindow + 1);
+                    }
+                %>
+                <div class="pagination-bar">
+                    <div class="pagination-info">共 <%= total %> 条 · 第 <%= page %> / <%= totalPages %> 页 · 显示 <%= startItem %>-<%= endItem %></div>
+                    <div class="pagination">
+                        <a class="page-btn <%= page <= 1 ? 'disabled' : '' %>" href="<%= page <= 1 ? 'javascript:void(0);' : buildPageHref(page - 1) %>">上一页</a>
+                        <% if (winStart > 1) { %>
+                            <a class="page-btn" href="<%= buildPageHref(1) %>">1</a>
+                            <% if (winStart > 2) { %><span class="page-ellipsis">…</span><% } %>
+                        <% } %>
+                        <% for (let p = winStart; p <= winEnd; p++) { %>
+                            <% if (p === page) { %>
+                                <span class="page-btn active"><%= p %></span>
+                            <% } else { %>
+                                <a class="page-btn" href="<%= buildPageHref(p) %>"><%= p %></a>
+                            <% } %>
+                        <% } %>
+                        <% if (winEnd < totalPages) { %>
+                            <% if (winEnd < totalPages - 1) { %><span class="page-ellipsis">…</span><% } %>
+                            <a class="page-btn" href="<%= buildPageHref(totalPages) %>"><%= totalPages %></a>
+                        <% } %>
+                        <a class="page-btn <%= page >= totalPages ? 'disabled' : '' %>" href="<%= page >= totalPages ? 'javascript:void(0);' : buildPageHref(page + 1) %>">下一页</a>
+                    </div>
+                </div>
+            <% } %>
         </main>
     </div>
 
@@ -179,6 +227,21 @@
             <div class="modal-footer">
                 <button class="btn-cancel" onclick="closeModal('actionModal')">取消</button>
                 <button class="btn-submit" onclick="addAction()">确认追加</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="allActionsModal">
+        <div class="modal-box modal-box-wide">
+            <div class="modal-header">
+                <h3 id="allActionsTitle">所有动作</h3>
+                <button class="modal-close" onclick="closeModal('allActionsModal')">&times;</button>
+            </div>
+            <div class="modal-body" id="allActionsBody" style="max-height:60vh; overflow-y:auto;">
+                <div style="text-align:center; padding:30px; color:var(--text-secondary);">加载中...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('allActionsModal')">关闭</button>
             </div>
         </div>
     </div>
@@ -328,6 +391,96 @@
             const res = await fetch('/api/competitor/' + encodeURIComponent(id), { method: 'DELETE' });
             const data = await res.json();
             if (res.ok) {
+                location.reload();
+            } else {
+                alert(data.error || '删除失败');
+            }
+        } catch (e) {
+            alert('网络错误: ' + e.message);
+        }
+    }
+
+    function fmtDtLocal(dt) {
+        if (!dt) return '-';
+        const d = (dt instanceof Date) ? dt : new Date(dt);
+        if (isNaN(d.getTime())) return String(dt);
+        return d.toLocaleString('zh-CN', { hour12: false });
+    }
+
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    let allActionsState = { competitorId: null, brandName: '' };
+
+    async function openAllActionsModal(id, brandName) {
+        allActionsState.competitorId = id;
+        allActionsState.brandName = brandName || '';
+        document.getElementById('allActionsTitle').textContent = (brandName || '竞品') + ' 的所有动作';
+        document.getElementById('allActionsBody').innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-secondary);">加载中...</div>';
+        document.getElementById('allActionsModal').classList.add('active');
+        await loadAllActions();
+    }
+
+    async function loadAllActions() {
+        const id = allActionsState.competitorId;
+        if (!id) return;
+        try {
+            const res = await fetch('/api/competitor/' + encodeURIComponent(id) + '/actions');
+            const data = await res.json();
+            if (!res.ok) {
+                document.getElementById('allActionsBody').innerHTML = '<div style="text-align:center; padding:30px; color:var(--danger);">' + escapeHtml(data.error || '加载失败') + '</div>';
+                return;
+            }
+            renderAllActions(data.actions || []);
+        } catch (e) {
+            document.getElementById('allActionsBody').innerHTML = '<div style="text-align:center; padding:30px; color:var(--danger);">网络错误: ' + escapeHtml(e.message) + '</div>';
+        }
+    }
+
+    function renderAllActions(actions) {
+        const body = document.getElementById('allActionsBody');
+        if (!actions || actions.length === 0) {
+            body.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-secondary);">暂无动作记录</div>';
+            return;
+        }
+        const html = actions.map(a => {
+            return `
+                <div class="action-item" data-action-id="${a.id}">
+                    <div class="action-item-header">
+                        <span class="action-item-time">${escapeHtml(fmtDtLocal(a.created_at))}</span>
+                        <button class="action-delete-btn" data-action-id="${a.id}" data-action-text="${escapeHtml(a.action_text).replace(/"/g, '&quot;')}">删除</button>
+                    </div>
+                    <div class="action-item-text">${escapeHtml(a.action_text)}</div>
+                </div>
+            `;
+        }).join('');
+        body.innerHTML = html;
+        body.querySelectorAll('.action-delete-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const actionId = this.getAttribute('data-action-id');
+                const actionText = this.getAttribute('data-action-text') || '';
+                const preview = actionText.length > 30 ? actionText.slice(0, 30) + '...' : actionText;
+                deleteAction(actionId, preview);
+            });
+        });
+    }
+
+    async function deleteAction(actionId, preview) {
+        if (!actionId) return;
+        if (!confirm('确认删除该动作' + (preview ? ('：\n\n' + preview) : '？'))) return;
+        try {
+            const res = await fetch('/api/competitor/action/' + encodeURIComponent(actionId), { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                await loadAllActions();
+                // Update the corresponding "展开全部" count and refresh inline recent 2
                 location.reload();
             } else {
                 alert(data.error || '删除失败');

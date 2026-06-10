@@ -72,25 +72,46 @@ function buildTableRefMap() {
 app.get('/dashboard', async (req, res) => {
     try {
         const { search = '', category = '', status = '' } = req.query;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = 15;
+        const offset = (page - 1) * pageSize;
+
         const modules = await queryAll('SELECT * FROM sop_modules ORDER BY sort_order');
 
-        let sql = 'SELECT * FROM products WHERE 1=1';
-        const params = [];
+        const whereParts = ['1=1'];
+        const filterParams = [];
         if (search) {
-            sql += " AND (asin LIKE ? OR name LIKE ?)";
-            params.push(`%${search}%`, `%${search}%`);
+            whereParts.push('(asin LIKE ? OR name LIKE ?)');
+            filterParams.push(`%${search}%`, `%${search}%`);
         }
         if (category) {
-            sql += " AND category = ?";
-            params.push(category);
+            whereParts.push('category = ?');
+            filterParams.push(category);
         }
         if (status) {
-            sql += " AND status = ?";
-            params.push(status);
+            whereParts.push('status = ?');
+            filterParams.push(status);
         }
-        sql += " ORDER BY created_at ASC";
+        const whereSql = whereParts.join(' AND ');
 
-        let products = await queryAll(sql, params);
+        const totalRow = await queryOne(`SELECT COUNT(*) AS cnt FROM products WHERE ${whereSql}`, filterParams);
+        const total = totalRow ? totalRow.cnt : 0;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+        // Aggregate stats across the full filtered set, not just the current page
+        const statRows = await queryAll(
+            `SELECT status, COUNT(*) AS cnt FROM products WHERE ${whereSql} GROUP BY status`,
+            filterParams
+        );
+        const stats = { total, '待处理': 0, '进行中': 0, '已完成': 0, '跳过': 0 };
+        for (const r of statRows) {
+            if (r.status && Object.prototype.hasOwnProperty.call(stats, r.status)) {
+                stats[r.status] = r.cnt;
+            }
+        }
+
+        let sql = `SELECT id, asin, name, category, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY created_at ASC LIMIT ? OFFSET ?`;
+        let products = await queryAll(sql, [...filterParams, pageSize, offset]);
 
         // Enrich with module progress
         products = await Promise.all(products.map(async (p) => {
@@ -112,6 +133,7 @@ app.get('/dashboard', async (req, res) => {
             current_search: search,
             current_category: category,
             current_status: status,
+            page, pageSize, total, totalPages, stats,
             is_htmx: isHtmx,
             title: '产品看板'
         });
@@ -201,11 +223,21 @@ app.post('/import', async (req, res) => {
 app.get('/competitors', async (req, res) => {
     try {
         const keyword = String(req.query.keyword || '').trim();
-        const sql = keyword
-            ? 'SELECT * FROM competitors WHERE brand_name LIKE ? ORDER BY updated_at DESC, id DESC'
-            : 'SELECT * FROM competitors ORDER BY updated_at DESC, id DESC';
-        const params = keyword ? [`%${keyword}%`] : [];
-        const competitors = await queryAll(sql, params);
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = 15;
+        const offset = (page - 1) * pageSize;
+
+        const whereSql = keyword ? 'WHERE brand_name LIKE ?' : '';
+        const countParams = keyword ? [`%${keyword}%`] : [];
+        const totalRow = await queryOne(`SELECT COUNT(*) AS cnt FROM competitors ${whereSql}`, countParams);
+        const total = totalRow ? totalRow.cnt : 0;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+        const params = keyword ? [`%${keyword}%`, pageSize, offset] : [pageSize, offset];
+        const competitors = await queryAll(
+            `SELECT * FROM competitors ${whereSql} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+            params
+        );
         const recentActions = {};
         if (competitors.length > 0) {
             const ids = competitors.map(c => c.id);
@@ -220,7 +252,21 @@ app.get('/competitors', async (req, res) => {
                 if (recentActions[cid].length < 2) recentActions[cid].push(a);
             }
         }
-        res.render('competitors', { competitors, recentActions, keyword, title: '竞品库' });
+        const actionTotals = {};
+        if (competitors.length > 0) {
+            const ids = competitors.map(c => c.id);
+            const placeholders = ids.map(() => '?').join(',');
+            const rows = await queryAll(
+                `SELECT competitor_id, COUNT(*) AS cnt FROM competitor_actions WHERE competitor_id IN (${placeholders}) GROUP BY competitor_id`,
+                ids
+            );
+            for (const r of rows) actionTotals[r.competitor_id] = r.cnt;
+        }
+        res.render('competitors', {
+            competitors, recentActions, actionTotals, keyword,
+            page, pageSize, total, totalPages,
+            title: '竞品库'
+        });
     } catch (e) {
         console.error('Competitors page error:', e);
         res.status(500).send('Server error: ' + e.message);
@@ -463,6 +509,36 @@ app.post('/api/competitor/:id/action', async (req, res) => {
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('Competitor action create error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/competitor/:id/actions', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const existing = await queryOne('SELECT id, brand_name FROM competitors WHERE id = ?', [id]);
+        if (!existing) return res.status(404).json({ error: '竞品不存在' });
+        const actions = await queryAll(
+            'SELECT id, action_text, created_at FROM competitor_actions WHERE competitor_id = ? ORDER BY created_at DESC, id DESC',
+            [id]
+        );
+        res.json({ brand_name: existing.brand_name, actions });
+    } catch (e) {
+        console.error('Competitor actions list error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/competitor/action/:actionId', async (req, res) => {
+    try {
+        const { actionId } = req.params;
+        const action = await queryOne('SELECT competitor_id FROM competitor_actions WHERE id = ?', [actionId]);
+        if (!action) return res.status(404).json({ error: '动作不存在' });
+        await runSql('DELETE FROM competitor_actions WHERE id = ?', [actionId]);
+        await runSql('UPDATE competitors SET updated_at = NOW() WHERE id = ?', [action.competitor_id]);
+        res.json({ status: 'ok' });
+    } catch (e) {
+        console.error('Competitor action delete error:', e);
         res.status(500).json({ error: e.message });
     }
 });

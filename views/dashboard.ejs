@@ -36,19 +36,19 @@
 
             <div class="stats-bar">
                 <div class="stat-card">
-                    <span class="stat-number"><%= products.length %></span>
+                    <span class="stat-number"><%= stats.total %></span>
                     <span class="stat-label">总产品</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-number warning"><%= products.filter(p => p.status === '待处理').length %></span>
+                    <span class="stat-number warning"><%= stats['待处理'] %></span>
                     <span class="stat-label">待处理</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-number info"><%= products.filter(p => p.status === '进行中').length %></span>
+                    <span class="stat-number info"><%= stats['进行中'] %></span>
                     <span class="stat-label">进行中</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-number success"><%= products.filter(p => p.status === '已完成').length %></span>
+                    <span class="stat-number success"><%= stats['已完成'] %></span>
                     <span class="stat-label">已完成</span>
                 </div>
             </div>
@@ -81,7 +81,7 @@
                             <% } %>
                             <% products.forEach((p, idx) => { %>
                             <tr class="product-row" onclick="window.location='/product/<%= p.asin %>'">
-                                <td><%= idx + 1 %></td>
+                                <td><%= (page - 1) * pageSize + idx + 1 %></td>
                                 <td><code><%= p.asin %></code></td>
                                 <td><%= p.name || '-' %></td>
                                 <td><%= p.category || '-' %></td>
@@ -116,6 +116,50 @@
                     </table>
                 </div>
             </div>
+
+            <% if (totalPages > 1 || total > 0) { %>
+                <%
+                    const buildPageHref = (p) => {
+                        const params = new URLSearchParams();
+                        if (current_search) params.set('search', current_search);
+                        if (current_category) params.set('category', current_category);
+                        if (current_status) params.set('status', current_status);
+                        if (p > 1) params.set('page', String(p));
+                        const qs = params.toString();
+                        return '/dashboard' + (qs ? ('?' + qs) : '');
+                    };
+                    const startItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
+                    const endItem = Math.min(page * pageSize, total);
+                    const pageWindow = 5;
+                    let winStart = Math.max(1, page - Math.floor(pageWindow / 2));
+                    let winEnd = Math.min(totalPages, winStart + pageWindow - 1);
+                    if (winEnd - winStart < pageWindow - 1) {
+                        winStart = Math.max(1, winEnd - pageWindow + 1);
+                    }
+                %>
+                <div class="pagination-bar">
+                    <div class="pagination-info">共 <%= total %> 条 · 第 <%= page %> / <%= totalPages %> 页 · 显示 <%= startItem %>-<%= endItem %></div>
+                    <div class="pagination">
+                        <a class="page-btn <%= page <= 1 ? 'disabled' : '' %>" href="<%= page <= 1 ? 'javascript:void(0);' : buildPageHref(page - 1) %>">上一页</a>
+                        <% if (winStart > 1) { %>
+                            <a class="page-btn" href="<%= buildPageHref(1) %>">1</a>
+                            <% if (winStart > 2) { %><span class="page-ellipsis">…</span><% } %>
+                        <% } %>
+                        <% for (let p = winStart; p <= winEnd; p++) { %>
+                            <% if (p === page) { %>
+                                <span class="page-btn active"><%= p %></span>
+                            <% } else { %>
+                                <a class="page-btn" href="<%= buildPageHref(p) %>"><%= p %></a>
+                            <% } %>
+                        <% } %>
+                        <% if (winEnd < totalPages) { %>
+                            <% if (winEnd < totalPages - 1) { %><span class="page-ellipsis">…</span><% } %>
+                            <a class="page-btn" href="<%= buildPageHref(totalPages) %>"><%= totalPages %></a>
+                        <% } %>
+                        <a class="page-btn <%= page >= totalPages ? 'disabled' : '' %>" href="<%= page >= totalPages ? 'javascript:void(0);' : buildPageHref(page + 1) %>">下一页</a>
+                    </div>
+                </div>
+            <% } %>
         </main>
     </div>
 
