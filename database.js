@@ -152,6 +152,22 @@ async function initDb() {
         // Silently skip
     }
 
+    // Ensure competitor_monitor_records table exists (migration)
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS competitor_monitor_records (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            competitor_id INT NOT NULL,
+            image_url VARCHAR(1000) NOT NULL,
+            has_change TINYINT DEFAULT 0 COMMENT '0: 无变化, 1: 有变化',
+            action_text TEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (competitor_id) REFERENCES competitors(id) ON DELETE CASCADE,
+            INDEX idx_competitor_monitor_created (competitor_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
     // Add composite indexes that match the hot query paths.
     try {
         await p.query('ALTER TABLE sop_items ADD INDEX idx_module_sort (module_id, sort_order)');

@@ -288,8 +288,38 @@ app.get('/competitors', async (req, res) => {
             );
             for (const r of rows) actionTotals[r.competitor_id] = r.cnt;
         }
+        const latestMonitorRecords = {};
+        if (competitors.length > 0) {
+            const ids = competitors.map(c => c.id);
+            const placeholders = ids.map(() => '?').join(',');
+            const records = await queryAll(
+                `SELECT id, competitor_id, image_url, has_change, action_text, created_at
+                 FROM competitor_monitor_records
+                 WHERE competitor_id IN (${placeholders})
+                 ORDER BY competitor_id ASC, created_at DESC, id DESC`,
+                ids
+            );
+            for (const record of records) {
+                if (!latestMonitorRecords[record.competitor_id]) {
+                    latestMonitorRecords[record.competitor_id] = record;
+                }
+            }
+        }
+        const monitorTotals = {};
+        if (competitors.length > 0) {
+            const ids = competitors.map(c => c.id);
+            const placeholders = ids.map(() => '?').join(',');
+            const rows = await queryAll(
+                `SELECT competitor_id, COUNT(*) AS cnt
+                 FROM competitor_monitor_records
+                 WHERE competitor_id IN (${placeholders})
+                 GROUP BY competitor_id`,
+                ids
+            );
+            for (const r of rows) monitorTotals[r.competitor_id] = r.cnt;
+        }
         res.render('competitors', {
-            competitors, recentActions, actionTotals, keyword,
+            competitors, recentActions, actionTotals, latestMonitorRecords, monitorTotals, keyword,
             page, pageSize, total, totalPages,
             title: '竞品库'
         });
@@ -357,6 +387,21 @@ function decodeHtml(text) {
         .replace(/&quot;/gi, '"')
         .replace(/&#39;/gi, "'")
         .trim();
+}
+
+function parseBooleanFlag(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+        if (value === 1) return true;
+        if (value === 0) return false;
+        return null;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+    }
+    return null;
 }
 
 const COMPETITOR_IMPORT_PATH = path.join(__dirname, 'public', '竞对信息.xlsx');
@@ -565,6 +610,98 @@ app.delete('/api/competitor/action/:actionId', async (req, res) => {
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('Competitor action delete error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/external/competitor-monitor', async (req, res) => {
+    try {
+        const competitorId = req.body.competitor_id;
+        const brandName = String(req.body.brand_name || '').trim();
+        if (!competitorId && !brandName) {
+            return res.status(400).json({ error: 'competitor_id 或 brand_name 至少传一个' });
+        }
+
+        let competitor = null;
+        if (competitorId) {
+            competitor = await queryOne(
+                'SELECT id, brand_name, status FROM competitors WHERE id = ?',
+                [competitorId]
+            );
+        } else {
+            competitor = await queryOne(
+                'SELECT id, brand_name, status FROM competitors WHERE brand_name = ? ORDER BY id DESC LIMIT 1',
+                [brandName]
+            );
+        }
+        if (!competitor) {
+            return res.status(404).json({ error: '竞品不存在' });
+        }
+        if (Number(competitor.status) !== 0) {
+            return res.status(400).json({ error: '当前竞品不是跟踪状态，不能接收监控回传' });
+        }
+
+        const imageUrl = normalizeUrl(req.body.image_url);
+        if (!imageUrl) return res.status(400).json({ error: 'image_url 为必填项' });
+        if (imageUrl.length > 1000) return res.status(400).json({ error: 'image_url 过长（最多 1000 字符）' });
+
+        const hasChange = parseBooleanFlag(req.body.has_change);
+        if (hasChange === null) {
+            return res.status(400).json({ error: 'has_change 必须为 true/false 或 1/0' });
+        }
+
+        const actionText = String(req.body.action_text || '').trim();
+        if (actionText.length > 2000) {
+            return res.status(400).json({ error: 'action_text 过长（最多 2000 字符）' });
+        }
+        if (hasChange && !actionText) {
+            return res.status(400).json({ error: '有变化时 action_text 为必填项' });
+        }
+
+        const monitorResult = await runSql(
+            'INSERT INTO competitor_monitor_records (competitor_id, image_url, has_change, action_text) VALUES (?, ?, ?, ?)',
+            [competitor.id, imageUrl, hasChange ? 1 : 0, actionText || null]
+        );
+
+        let actionAdded = false;
+        if (hasChange) {
+            await runSql(
+                'INSERT INTO competitor_actions (competitor_id, action_text) VALUES (?, ?)',
+                [competitor.id, actionText]
+            );
+            actionAdded = true;
+        }
+
+        await runSql('UPDATE competitors SET updated_at = NOW() WHERE id = ?', [competitor.id]);
+
+        res.json({
+            status: 'ok',
+            competitor_id: competitor.id,
+            brand_name: competitor.brand_name,
+            monitor_record_id: monitorResult && monitorResult.insertId ? monitorResult.insertId : null,
+            action_added: actionAdded
+        });
+    } catch (e) {
+        console.error('External competitor monitor error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/competitor/:id/monitor-records', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const existing = await queryOne('SELECT id, brand_name FROM competitors WHERE id = ?', [id]);
+        if (!existing) return res.status(404).json({ error: '竞品不存在' });
+        const records = await queryAll(
+            `SELECT id, image_url, has_change, action_text, created_at
+             FROM competitor_monitor_records
+             WHERE competitor_id = ?
+             ORDER BY created_at DESC, id DESC`,
+            [id]
+        );
+        res.json({ brand_name: existing.brand_name, records });
+    } catch (e) {
+        console.error('Competitor monitor records list error:', e);
         res.status(500).json({ error: e.message });
     }
 });
