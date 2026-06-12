@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+</head>
+<body>
+    <div class="app">
+        <%- include('sidebar', { active: 'metrics' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                    <div>
+                        <h1>每日数据填报</h1>
+                        <div class="page-desc">提交后会触发规则诊断与工单生成</div>
+                    </div>
+                    <a class="btn-sm" href="/tickets">查看工单看板</a>
+                </div>
+            </div>
+
+            <div class="module-card" style="margin-bottom:16px;">
+                <div class="module-header" style="cursor:default;">
+                    <div class="module-name">填报日期</div>
+                </div>
+                <div class="module-body">
+                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                        <input class="search-input" type="date" id="recordDate" value="<%= current_date %>">
+                        <button class="btn-primary" type="button" onclick="submitMetrics()">提交</button>
+                        <button class="btn-secondary" type="button" onclick="addRow()">+ 添加行</button>
+                        <span id="submitMsg" style="font-size:13px; color:#606266;"></span>
+                    </div>
+                    <div style="font-size:12px; color:#909399; margin-top:8px;">
+                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / 广告订单数(ad_orders) / 核心词排名(core_kw_rank) / BSR排名(bsr_rank)
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container" style="max-height:none;">
+                <table class="product-table" id="metricsTable">
+                    <thead>
+                        <tr>
+                            <th style="min-width:50px">#</th>
+                            <th style="min-width:120px">ASIN *</th>
+                            <th style="min-width:90px" title="sessions">访客数</th>
+                            <th style="min-width:80px" title="orders">订单数</th>
+                            <th style="min-width:110px" title="impressions">曝光</th>
+                            <th style="min-width:90px" title="clicks">点击</th>
+                            <th style="min-width:110px" title="ad_spend">广告花费</th>
+                            <th style="min-width:110px" title="ad_sales">广告销售额</th>
+                            <th style="min-width:110px" title="total_sales">总销售额</th>
+                            <th style="min-width:100px" title="ad_orders">广告订单数</th>
+                            <th style="min-width:120px" title="core_kw_rank">核心词排名</th>
+                            <th style="min-width:90px" title="bsr_rank">BSR排名</th>
+                            <th style="min-width:90px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="metricsBody">
+                        <% (prefill || []).forEach((row, idx) => { %>
+                        <tr>
+                            <td><%= idx + 1 %></td>
+                            <td><input class="search-input" style="width:140px" value="<%= row.asin %>" data-k="asin"></td>
+                            <td><input class="search-input" style="width:90px" value="" data-k="sessions"></td>
+                            <td><input class="search-input" style="width:80px" value="" data-k="orders"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="impressions"></td>
+                            <td><input class="search-input" style="width:90px" value="" data-k="clicks"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="ad_spend"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="ad_sales"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="total_sales"></td>
+                            <td><input class="search-input" style="width:100px" value="" data-k="ad_orders"></td>
+                            <td><input class="search-input" style="width:120px" value="" data-k="core_kw_rank"></td>
+                            <td><input class="search-input" style="width:90px" value="" data-k="bsr_rank"></td>
+                            <td><button class="btn-icon" type="button" onclick="removeRow(this)">删</button></td>
+                        </tr>
+                        <% }) %>
+                        <% if (!prefill || prefill.length === 0) { %>
+                        <tr>
+                            <td>1</td>
+                            <td><input class="search-input" style="width:140px" value="" data-k="asin"></td>
+                            <td><input class="search-input" style="width:90px" value="" data-k="sessions"></td>
+                            <td><input class="search-input" style="width:80px" value="" data-k="orders"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="impressions"></td>
+                            <td><input class="search-input" style="width:90px" value="" data-k="clicks"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="ad_spend"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="ad_sales"></td>
+                            <td><input class="search-input" style="width:110px" value="" data-k="total_sales"></td>
+                            <td><input class="search-input" style="width:100px" value="" data-k="ad_orders"></td>
+                            <td><input class="search-input" style="width:120px" value="" data-k="core_kw_rank"></td>
+                            <td><input class="search-input" style="width:90px" value="" data-k="bsr_rank"></td>
+                            <td><button class="btn-icon" type="button" onclick="removeRow(this)">删</button></td>
+                        </tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="module-card" style="margin-top:16px;">
+                <div class="module-header" style="cursor:default;">
+                    <div class="module-name">本次提交反馈</div>
+                </div>
+                <div class="module-body">
+                    <pre id="resultBox" style="white-space:pre-wrap; font-size:13px; color:#303133; background:#f5f7fa; border:1px solid #e4e7ed; padding:12px 14px; border-radius:8px; min-height:60px;"></pre>
+                </div>
+            </div>
+
+            <script>
+            function addRow() {
+                const tbody = document.getElementById('metricsBody');
+                const idx = tbody.children.length + 1;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${idx}</td>
+                    <td><input class="search-input" style="width:140px" value="" data-k="asin"></td>
+                    <td><input class="search-input" style="width:90px" value="" data-k="sessions"></td>
+                    <td><input class="search-input" style="width:80px" value="" data-k="orders"></td>
+                    <td><input class="search-input" style="width:110px" value="" data-k="impressions"></td>
+                    <td><input class="search-input" style="width:90px" value="" data-k="clicks"></td>
+                    <td><input class="search-input" style="width:110px" value="" data-k="ad_spend"></td>
+                    <td><input class="search-input" style="width:110px" value="" data-k="ad_sales"></td>
+                    <td><input class="search-input" style="width:110px" value="" data-k="total_sales"></td>
+                    <td><input class="search-input" style="width:100px" value="" data-k="ad_orders"></td>
+                    <td><input class="search-input" style="width:120px" value="" data-k="core_kw_rank"></td>
+                    <td><input class="search-input" style="width:90px" value="" data-k="bsr_rank"></td>
+                    <td><button class="btn-icon" type="button" onclick="removeRow(this)">删</button></td>
+                `;
+                tbody.appendChild(tr);
+            }
+
+            function removeRow(btn) {
+                const tr = btn.closest('tr');
+                tr.parentElement.removeChild(tr);
+                const tbody = document.getElementById('metricsBody');
+                Array.from(tbody.children).forEach((r, i) => {
+                    r.children[0].innerText = String(i + 1);
+                });
+            }
+
+            function parseNum(v) {
+                if (v === undefined || v === null) return null;
+                const s = String(v).trim();
+                if (!s) return null;
+                const n = Number(s);
+                return Number.isFinite(n) ? n : null;
+            }
+
+            async function submitMetrics() {
+                const date = document.getElementById('recordDate').value;
+                const tbody = document.getElementById('metricsBody');
+                const rows = [];
+                for (const tr of Array.from(tbody.children)) {
+                    const obj = {};
+                    for (const input of tr.querySelectorAll('input[data-k]')) {
+                        const k = input.getAttribute('data-k');
+                        if (k === 'asin') {
+                            obj.asin = input.value.trim();
+                        } else if (['ad_spend','ad_sales','total_sales'].includes(k)) {
+                            const n = parseNum(input.value);
+                            if (n !== null) obj[k] = n;
+                        } else {
+                            const n = parseNum(input.value);
+                            if (n !== null) obj[k] = Math.trunc(n);
+                        }
+                    }
+                    if (obj.asin) rows.push(obj);
+                }
+                if (!date) return alert('请选择日期');
+                if (rows.length === 0) return alert('请至少填写一行 ASIN');
+                document.getElementById('submitMsg').innerText = '提交中...';
+                document.getElementById('resultBox').innerText = '';
+                try {
+                    const resp = await fetch('/api/v1/metrics/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ source: 'MANUAL', date, data: rows })
+                    });
+                    const json = await resp.json();
+                    if (!resp.ok) throw new Error(json && json.error ? json.error : '提交失败');
+                    document.getElementById('submitMsg').innerText = '提交成功';
+                    document.getElementById('resultBox').innerText = JSON.stringify(json, null, 2);
+                } catch (e) {
+                    document.getElementById('submitMsg').innerText = '提交失败';
+                    document.getElementById('resultBox').innerText = String(e.message || e);
+                }
+            }
+            </script>
+        </main>
+    </div>
+</body>
+</html>
+

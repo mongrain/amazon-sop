@@ -168,6 +168,149 @@ async function initDb() {
         // Silently skip
     }
 
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            role ENUM('OPS','DESIGN','MANAGER') NOT NULL DEFAULT 'OPS',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_user_name (name),
+            INDEX idx_role (role)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS sprint_projects (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            asin VARCHAR(30) NOT NULL,
+            owner_id INT DEFAULT NULL,
+            status ENUM('ACTIVE','MAINTENANCE','STOPPED') NOT NULL DEFAULT 'ACTIVE',
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            target_cycle_days INT NOT NULL DEFAULT 14,
+            current_daily_orders INT DEFAULT NULL,
+            target_daily_orders INT DEFAULT NULL,
+            current_rank INT DEFAULT NULL,
+            target_rank INT DEFAULT NULL,
+            promo_tacos_limit DECIMAL(10,2) DEFAULT NULL,
+            stable_tacos_target DECIMAL(10,2) DEFAULT NULL,
+            max_loss_7d DECIMAL(10,2) DEFAULT NULL,
+            inventory_days INT DEFAULT NULL,
+            competitor_action TEXT,
+            page_ok TINYINT DEFAULT 0,
+            exit_conditions TEXT,
+            profit_margin DECIMAL(6,2) DEFAULT NULL,
+            acos_limit DECIMAL(10,2) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_sprint_asin (asin),
+            FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+            INDEX idx_status (status),
+            INDEX idx_owner (owner_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS weekly_reviews (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            sprint_id INT NOT NULL,
+            week_start_date DATE NOT NULL,
+            status ENUM('PENDING','COMPLETED') NOT NULL DEFAULT 'PENDING',
+            actual_max_loss DECIMAL(10,2) DEFAULT NULL,
+            actual_tacos DECIMAL(10,2) DEFAULT NULL,
+            decision ENUM('CONTINUE','MAINTENANCE','STOPPED') DEFAULT NULL,
+            summary TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_sprint_week (sprint_id, week_start_date),
+            FOREIGN KEY (sprint_id) REFERENCES sprint_projects(id) ON DELETE CASCADE,
+            INDEX idx_review_status (status),
+            INDEX idx_week (week_start_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS daily_asin_metrics (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            asin VARCHAR(30) NOT NULL,
+            record_date DATE NOT NULL,
+            data_source ENUM('MANUAL','RPA_BOT') NOT NULL DEFAULT 'MANUAL',
+            sessions INT DEFAULT NULL,
+            orders INT DEFAULT NULL,
+            impressions INT DEFAULT NULL,
+            clicks INT DEFAULT NULL,
+            ad_spend DECIMAL(12,2) DEFAULT NULL,
+            ad_sales DECIMAL(12,2) DEFAULT NULL,
+            total_sales DECIMAL(12,2) DEFAULT NULL,
+            ad_orders INT DEFAULT NULL,
+            core_kw_rank INT DEFAULT NULL,
+            bsr_rank INT DEFAULT NULL,
+            acos DECIMAL(10,4) DEFAULT NULL,
+            tacos DECIMAL(10,4) DEFAULT NULL,
+            ctr DECIMAL(10,6) DEFAULT NULL,
+            cvr DECIMAL(10,6) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_asin_date (asin, record_date),
+            INDEX idx_record_date (record_date),
+            INDEX idx_source_date (data_source, record_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS metric_insights (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            asin VARCHAR(30) NOT NULL,
+            record_date DATE NOT NULL,
+            insight_type VARCHAR(50) NOT NULL,
+            message VARCHAR(500) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_asin_date (asin, record_date),
+            INDEX idx_type (insight_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS issue_tickets (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            sprint_id INT DEFAULT NULL,
+            asin VARCHAR(30) NOT NULL,
+            ticket_type VARCHAR(50) NOT NULL,
+            severity ENUM('S','A','B','C') DEFAULT 'B',
+            owner_id INT DEFAULT NULL,
+            co_owner_id INT DEFAULT NULL,
+            status ENUM('TODO','PENDING_DESIGN','WAITING_VERIFY','RESOLVED','FAILED') NOT NULL DEFAULT 'TODO',
+            sla_deadline DATETIME DEFAULT NULL,
+            trigger_reason TEXT,
+            design_request TEXT,
+            design_asset_url VARCHAR(1000) DEFAULT NULL,
+            verify_evidence TEXT,
+            verify_file_url VARCHAR(1000) DEFAULT NULL,
+            resolved_at DATETIME DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (sprint_id) REFERENCES sprint_projects(id) ON DELETE SET NULL,
+            FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (co_owner_id) REFERENCES users(id) ON DELETE SET NULL,
+            INDEX idx_status_deadline (status, sla_deadline),
+            INDEX idx_asin_created (asin, created_at),
+            INDEX idx_sprint (sprint_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
     // Add composite indexes that match the hot query paths.
     try {
         await p.query('ALTER TABLE sop_items ADD INDEX idx_module_sort (module_id, sort_order)');

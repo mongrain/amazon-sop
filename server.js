@@ -49,8 +49,31 @@ const upload = multer({
     }
 });
 
-// Initialize database on startup
+const fileUpload = multer({
+    storage,
+    limits: { fileSize: 15 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const ok =
+            /^image\//.test(file.mimetype) ||
+            /^video\//.test(file.mimetype) ||
+            [
+                'application/pdf',
+                'application/zip',
+                'application/x-zip-compressed',
+                'text/plain',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ].includes(file.mimetype);
+        if (ok) cb(null, true);
+        else cb(new Error('不支持的文件类型'));
+    }
+});
+
+let dbReady = false;
 initDb().then(() => {
+    dbReady = true;
     console.log('Database initialized');
 }).catch(err => {
     console.error('Database init failed:', err);
@@ -79,6 +102,180 @@ function buildTableRefMap() {
         refMap[mod.name] = itemMap;
     }
     return refMap;
+}
+
+function toDateString(d) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseYmd(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').trim());
+    if (!m) return null;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+}
+
+function addDays(d, days) {
+    const x = new Date(d.getTime());
+    x.setDate(x.getDate() + days);
+    return x;
+}
+
+function getMondayStart(d) {
+    const x = new Date(d.getTime());
+    x.setHours(0, 0, 0, 0);
+    const day = x.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    x.setDate(x.getDate() + diff);
+    return x;
+}
+
+async function getSetting(key, defaultValue) {
+    const row = await queryOne('SELECT value FROM app_settings WHERE `key` = ?', [key]);
+    if (!row || row.value === null || row.value === undefined || String(row.value).trim() === '') return defaultValue;
+    return row.value;
+}
+
+async function setSetting(key, value) {
+    await runSql(
+        'INSERT INTO app_settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
+        [key, String(value)]
+    );
+}
+
+let cachedDefaultDesignUserId = null;
+async function getDefaultDesignUserId() {
+    if (cachedDefaultDesignUserId !== null) return cachedDefaultDesignUserId;
+    const row = await queryOne("SELECT id FROM users WHERE role = 'DESIGN' ORDER BY id ASC LIMIT 1");
+    cachedDefaultDesignUserId = row ? row.id : null;
+    return cachedDefaultDesignUserId;
+}
+
+async function ensureWeeklyReviewsForActiveSprints(weekStartStr) {
+    await runSql(
+        `INSERT IGNORE INTO weekly_reviews (sprint_id, week_start_date, status)
+         SELECT id, ?, 'PENDING' FROM sprint_projects WHERE status = 'ACTIVE'`,
+        [weekStartStr]
+    );
+}
+
+async function ticketExists(asin, ticketType, dateStr) {
+    const row = await queryOne(
+        'SELECT id FROM issue_tickets WHERE asin = ? AND ticket_type = ? AND DATE(created_at) = ? LIMIT 1',
+        [asin, ticketType, dateStr]
+    );
+    return !!row;
+}
+
+async function createTicket(payload) {
+    const {
+        sprint_id,
+        asin,
+        ticket_type,
+        severity = 'B',
+        owner_id = null,
+        co_owner_id = null,
+        status = 'TODO',
+        sla_deadline = null,
+        trigger_reason = null
+    } = payload;
+    await runSql(
+        `INSERT INTO issue_tickets
+         (sprint_id, asin, ticket_type, severity, owner_id, co_owner_id, status, sla_deadline, trigger_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [sprint_id, asin, ticket_type, severity, owner_id, co_owner_id, status, sla_deadline, trigger_reason]
+    );
+}
+
+async function ensureInsight(asin, recordDateStr, insightType, message) {
+    const row = await queryOne(
+        'SELECT id FROM metric_insights WHERE asin = ? AND record_date = ? AND insight_type = ? LIMIT 1',
+        [asin, recordDateStr, insightType]
+    );
+    if (row) return;
+    await runSql(
+        'INSERT INTO metric_insights (asin, record_date, insight_type, message) VALUES (?, ?, ?, ?)',
+        [asin, recordDateStr, insightType, message]
+    );
+}
+
+async function runPostIngestionRules(asins, recordDateStr) {
+    for (const asin of asins) {
+        try {
+            const sprint = await queryOne('SELECT * FROM sprint_projects WHERE asin = ?', [asin]);
+            if (!sprint) continue;
+
+            const end = parseYmd(recordDateStr);
+            if (!end) continue;
+            const startStr = toDateString(addDays(end, -6));
+            const rows = await queryAll(
+                `SELECT record_date, orders, ad_spend, total_sales, tacos
+                 FROM daily_asin_metrics
+                 WHERE asin = ? AND record_date BETWEEN ? AND ?
+                 ORDER BY record_date ASC`,
+                [asin, startStr, recordDateStr]
+            );
+            const adSpend7d = rows.reduce((sum, r) => sum + Number(r.ad_spend || 0), 0);
+            const totalSales7d = rows.reduce((sum, r) => sum + Number(r.total_sales || 0), 0);
+            const profitMargin = sprint.profit_margin === null ? null : Number(sprint.profit_margin);
+            const maxLoss7d = sprint.max_loss_7d === null ? null : Number(sprint.max_loss_7d);
+            if (profitMargin !== null && maxLoss7d !== null) {
+                const estProfit = totalSales7d * profitMargin / 100;
+                const loss = adSpend7d - estProfit;
+                if (loss > maxLoss7d) {
+                    const exists = await queryOne(
+                        `SELECT id FROM issue_tickets
+                         WHERE asin = ? AND ticket_type = 'EXIT_EVAL'
+                           AND status IN ('TODO','PENDING_DESIGN','WAITING_VERIFY')
+                           AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                         LIMIT 1`,
+                        [asin]
+                    );
+                    if (!exists) {
+                        const reason = `近7天广告花费=${adSpend7d.toFixed(2)}, 预估利润=${estProfit.toFixed(2)}, 差额=${loss.toFixed(2)}, 7天止损线=${maxLoss7d.toFixed(2)}`;
+                        const deadline = new Date();
+                        deadline.setDate(deadline.getDate() + 1);
+                        await createTicket({
+                            sprint_id: sprint.id,
+                            asin,
+                            ticket_type: 'EXIT_EVAL',
+                            severity: 'S',
+                            owner_id: sprint.owner_id || null,
+                            co_owner_id: null,
+                            status: 'TODO',
+                            sla_deadline: deadline.toISOString().slice(0, 19).replace('T', ' '),
+                            trigger_reason: reason
+                        });
+                    }
+                }
+            }
+
+            const promoLimit = sprint.promo_tacos_limit === null ? null : Number(sprint.promo_tacos_limit);
+            if (promoLimit !== null) {
+                const today = rows.find(r => String(r.record_date) === recordDateStr) || null;
+                const todayTacos = today && today.tacos !== null && today.tacos !== undefined ? Number(today.tacos) : null;
+                if (todayTacos !== null && todayTacos < promoLimit && rows.length >= 6) {
+                    const orders = rows.map(r => Number(r.orders || 0));
+                    const first3 = (orders[0] + orders[1] + orders[2]) / 3;
+                    const last3 = (orders[orders.length - 3] + orders[orders.length - 2] + orders[orders.length - 1]) / 3;
+                    if (last3 > first3) {
+                        await ensureInsight(
+                            asin,
+                            recordDateStr,
+                            'GOOD_PERF',
+                            `TACOS(${todayTacos.toFixed(2)}%) 低于红线(${promoLimit.toFixed(2)}%) 且单量上升，可向中大词扩展`
+                        );
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Post ingestion rule error:', asin, e);
+        }
+    }
 }
 
 app.get('/dashboard', async (req, res) => {
@@ -289,6 +486,7 @@ app.get('/competitors', async (req, res) => {
             for (const r of rows) actionTotals[r.competitor_id] = r.cnt;
         }
         const latestMonitorRecords = {};
+        const recentMonitorRecords = {};
         if (competitors.length > 0) {
             const ids = competitors.map(c => c.id);
             const placeholders = ids.map(() => '?').join(',');
@@ -300,9 +498,11 @@ app.get('/competitors', async (req, res) => {
                 ids
             );
             for (const record of records) {
-                if (!latestMonitorRecords[record.competitor_id]) {
-                    latestMonitorRecords[record.competitor_id] = record;
-                }
+                record.image_url = normalizeMonitorImageUrl(record.image_url);
+                const cid = record.competitor_id;
+                if (!latestMonitorRecords[cid]) latestMonitorRecords[cid] = record;
+                if (!recentMonitorRecords[cid]) recentMonitorRecords[cid] = [];
+                if (recentMonitorRecords[cid].length < 2) recentMonitorRecords[cid].push(record);
             }
         }
         const monitorTotals = {};
@@ -319,7 +519,7 @@ app.get('/competitors', async (req, res) => {
             for (const r of rows) monitorTotals[r.competitor_id] = r.cnt;
         }
         res.render('competitors', {
-            competitors, recentActions, actionTotals, latestMonitorRecords, monitorTotals, keyword,
+            competitors, recentActions, actionTotals, latestMonitorRecords, recentMonitorRecords, monitorTotals, keyword,
             page, pageSize, total, totalPages,
             title: '竞品库'
         });
@@ -376,6 +576,12 @@ function normalizeUrl(url) {
     if (!trimmed) return null;
     if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) return trimmed;
     return 'https://' + trimmed;
+}
+
+function normalizeMonitorImageUrl(url) {
+    const normalized = normalizeUrl(url);
+    if (!normalized) return null;
+    return normalized.replace(/^https:\/\//i, 'http://');
 }
 
 function decodeHtml(text) {
@@ -641,7 +847,7 @@ app.post('/api/external/competitor-monitor', async (req, res) => {
             return res.status(400).json({ error: '当前竞品不是跟踪状态，不能接收监控回传' });
         }
 
-        const imageUrl = normalizeUrl(req.body.image_url);
+        const imageUrl = normalizeMonitorImageUrl(req.body.image_url);
         if (!imageUrl) return res.status(400).json({ error: 'image_url 为必填项' });
         if (imageUrl.length > 1000) return res.status(400).json({ error: 'image_url 过长（最多 1000 字符）' });
 
@@ -699,6 +905,9 @@ app.get('/api/competitor/:id/monitor-records', async (req, res) => {
              ORDER BY created_at DESC, id DESC`,
             [id]
         );
+        for (const record of records) {
+            record.image_url = normalizeMonitorImageUrl(record.image_url);
+        }
         res.json({ brand_name: existing.brand_name, records });
     } catch (e) {
         console.error('Competitor monitor records list error:', e);
@@ -1132,6 +1341,760 @@ app.patch('/api/version/:versionId/item/:itemId', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+app.get('/users', async (req, res) => {
+    try {
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.render('users', { users, error: null, title: '人员管理' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/users', async (req, res) => {
+    try {
+        const name = String(req.body.name || '').trim();
+        const role = String(req.body.role || '').trim();
+        if (!name) {
+            const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+            return res.status(400).render('users', { users, error: '姓名不能为空', title: '人员管理' });
+        }
+        if (!['OPS', 'DESIGN', 'MANAGER'].includes(role)) {
+            const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+            return res.status(400).render('users', { users, error: '角色不合法', title: '人员管理' });
+        }
+        await runSql('INSERT INTO users (name, role) VALUES (?, ?)', [name, role]);
+        cachedDefaultDesignUserId = null;
+        res.redirect('/users');
+    } catch (e) {
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.status(400).render('users', { users, error: e.message, title: '人员管理' });
+    }
+});
+
+app.post('/users/:id/delete', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!id) return res.redirect('/users');
+        await runSql('DELETE FROM users WHERE id = ?', [id]);
+        cachedDefaultDesignUserId = null;
+        res.redirect('/users');
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.get('/sprints', async (req, res) => {
+    try {
+        const sprints = await queryAll(
+            `SELECT sp.*, u.name AS owner_name
+             FROM sprint_projects sp
+             LEFT JOIN users u ON sp.owner_id = u.id
+             ORDER BY sp.id DESC`
+        );
+        res.render('sprints', { sprints, title: '冲刺项目' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.get('/sprints/new', async (req, res) => {
+    try {
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.render('sprint_form', { sprint: null, users, error: null, title: '新建冲刺项目' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/sprints', async (req, res) => {
+    try {
+        const asin = String(req.body.asin || '').trim();
+        const owner_id = req.body.owner_id ? Number(req.body.owner_id) : null;
+        const status = String(req.body.status || 'ACTIVE').trim();
+        const start_date = String(req.body.start_date || '').trim();
+        const end_date = String(req.body.end_date || '').trim();
+        const target_cycle_days = Number(req.body.target_cycle_days || 14);
+        if (!asin) throw new Error('ASIN 不能为空');
+        const sd = parseYmd(start_date);
+        const ed = parseYmd(end_date);
+        if (!sd || !ed) throw new Error('开始/结束日期不合法');
+        if (ed.getTime() < sd.getTime()) throw new Error('结束日期不能早于开始日期');
+        if (!Number.isFinite(target_cycle_days) || target_cycle_days <= 0) throw new Error('目标周期不合法');
+        if (!['ACTIVE', 'MAINTENANCE', 'STOPPED'].includes(status)) throw new Error('状态不合法');
+
+        const numOrNull = v => {
+            const s = String(v || '').trim();
+            if (!s) return null;
+            const n = Number(s);
+            if (!Number.isFinite(n)) return null;
+            return n;
+        };
+        const intOrNull = v => {
+            const n = numOrNull(v);
+            return n === null ? null : Math.trunc(n);
+        };
+
+        await runSql(
+            `INSERT INTO sprint_projects
+             (asin, owner_id, status, start_date, end_date, target_cycle_days,
+              current_daily_orders, target_daily_orders, current_rank, target_rank,
+              promo_tacos_limit, stable_tacos_target, max_loss_7d, inventory_days,
+              competitor_action, page_ok, exit_conditions, profit_margin, acos_limit)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                asin,
+                owner_id || null,
+                status,
+                start_date,
+                end_date,
+                target_cycle_days,
+                intOrNull(req.body.current_daily_orders),
+                intOrNull(req.body.target_daily_orders),
+                intOrNull(req.body.current_rank),
+                intOrNull(req.body.target_rank),
+                numOrNull(req.body.promo_tacos_limit),
+                numOrNull(req.body.stable_tacos_target),
+                numOrNull(req.body.max_loss_7d),
+                intOrNull(req.body.inventory_days),
+                String(req.body.competitor_action || '').trim() || null,
+                req.body.page_ok ? 1 : 0,
+                String(req.body.exit_conditions || '').trim() || null,
+                numOrNull(req.body.profit_margin),
+                numOrNull(req.body.acos_limit)
+            ]
+        );
+        res.redirect('/sprints');
+    } catch (e) {
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.status(400).render('sprint_form', { sprint: req.body, users, error: e.message, title: '新建冲刺项目' });
+    }
+});
+
+app.get('/sprints/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const sprint = await queryOne('SELECT * FROM sprint_projects WHERE id = ?', [id]);
+        if (!sprint) return res.status(404).send('项目不存在');
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.render('sprint_form', { sprint, users, error: null, title: '编辑冲刺项目' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/sprints/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const sprint = await queryOne('SELECT * FROM sprint_projects WHERE id = ?', [id]);
+        if (!sprint) return res.status(404).send('项目不存在');
+        const owner_id = req.body.owner_id ? Number(req.body.owner_id) : null;
+        const status = String(req.body.status || 'ACTIVE').trim();
+        const start_date = String(req.body.start_date || '').trim();
+        const end_date = String(req.body.end_date || '').trim();
+        const target_cycle_days = Number(req.body.target_cycle_days || 14);
+        const sd = parseYmd(start_date);
+        const ed = parseYmd(end_date);
+        if (!sd || !ed) throw new Error('开始/结束日期不合法');
+        if (ed.getTime() < sd.getTime()) throw new Error('结束日期不能早于开始日期');
+        if (!Number.isFinite(target_cycle_days) || target_cycle_days <= 0) throw new Error('目标周期不合法');
+        if (!['ACTIVE', 'MAINTENANCE', 'STOPPED'].includes(status)) throw new Error('状态不合法');
+
+        const numOrNull = v => {
+            const s = String(v || '').trim();
+            if (!s) return null;
+            const n = Number(s);
+            if (!Number.isFinite(n)) return null;
+            return n;
+        };
+        const intOrNull = v => {
+            const n = numOrNull(v);
+            return n === null ? null : Math.trunc(n);
+        };
+
+        await runSql(
+            `UPDATE sprint_projects SET
+             owner_id = ?, status = ?, start_date = ?, end_date = ?, target_cycle_days = ?,
+             current_daily_orders = ?, target_daily_orders = ?, current_rank = ?, target_rank = ?,
+             promo_tacos_limit = ?, stable_tacos_target = ?, max_loss_7d = ?, inventory_days = ?,
+             competitor_action = ?, page_ok = ?, exit_conditions = ?, profit_margin = ?, acos_limit = ?,
+             updated_at = NOW()
+             WHERE id = ?`,
+            [
+                owner_id || null,
+                status,
+                start_date,
+                end_date,
+                target_cycle_days,
+                intOrNull(req.body.current_daily_orders),
+                intOrNull(req.body.target_daily_orders),
+                intOrNull(req.body.current_rank),
+                intOrNull(req.body.target_rank),
+                numOrNull(req.body.promo_tacos_limit),
+                numOrNull(req.body.stable_tacos_target),
+                numOrNull(req.body.max_loss_7d),
+                intOrNull(req.body.inventory_days),
+                String(req.body.competitor_action || '').trim() || null,
+                req.body.page_ok ? 1 : 0,
+                String(req.body.exit_conditions || '').trim() || null,
+                numOrNull(req.body.profit_margin),
+                numOrNull(req.body.acos_limit),
+                id
+            ]
+        );
+        res.redirect('/sprints');
+    } catch (e) {
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        const sprint = { ...req.body, id: req.params.id };
+        res.status(400).render('sprint_form', { sprint, users, error: e.message, title: '编辑冲刺项目' });
+    }
+});
+
+app.get('/reviews', async (req, res) => {
+    try {
+        const sprint_id = req.query.sprint_id ? Number(req.query.sprint_id) : null;
+        const status = String(req.query.status || '').trim();
+        const now = new Date();
+        const weekStartStr = toDateString(getMondayStart(now));
+        await ensureWeeklyReviewsForActiveSprints(weekStartStr);
+
+        const where = ['1=1'];
+        const params = [];
+        if (sprint_id) {
+            where.push('wr.sprint_id = ?');
+            params.push(sprint_id);
+        }
+        if (status) {
+            where.push('wr.status = ?');
+            params.push(status);
+        }
+        const reviews = await queryAll(
+            `SELECT wr.*, sp.asin
+             FROM weekly_reviews wr
+             JOIN sprint_projects sp ON wr.sprint_id = sp.id
+             WHERE ${where.join(' AND ')}
+             ORDER BY wr.week_start_date DESC, wr.id DESC`,
+            params
+        );
+        const sprints = await queryAll('SELECT id, asin, status FROM sprint_projects ORDER BY id DESC');
+        res.render('reviews', {
+            reviews,
+            sprints,
+            current_sprint_id: sprint_id ? String(sprint_id) : '',
+            current_status: status || '',
+            title: '周复盘'
+        });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.get('/reviews/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const review = await queryOne(
+            `SELECT wr.*, sp.asin
+             FROM weekly_reviews wr
+             JOIN sprint_projects sp ON wr.sprint_id = sp.id
+             WHERE wr.id = ?`,
+            [id]
+        );
+        if (!review) return res.status(404).send('复盘不存在');
+        res.render('review_form', { review, error: null, title: '周复盘填写' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/reviews/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const review = await queryOne('SELECT * FROM weekly_reviews WHERE id = ?', [id]);
+        if (!review) return res.status(404).send('复盘不存在');
+
+        const actual_max_loss = Number(req.body.actual_max_loss);
+        const actual_tacos = Number(req.body.actual_tacos);
+        const decision = String(req.body.decision || '').trim();
+        const status = String(req.body.status || '').trim();
+        const summary = String(req.body.summary || '').trim();
+
+        if (!Number.isFinite(actual_max_loss)) throw new Error('本周实际最大亏损不合法');
+        if (!Number.isFinite(actual_tacos)) throw new Error('当前实际TACOS不合法');
+        if (!['CONTINUE', 'MAINTENANCE', 'STOPPED'].includes(decision)) throw new Error('决策不合法');
+        if (!['PENDING', 'COMPLETED'].includes(status)) throw new Error('复盘状态不合法');
+        if (!summary) throw new Error('复盘结论不能为空');
+
+        await runSql(
+            `UPDATE weekly_reviews SET
+             actual_max_loss = ?, actual_tacos = ?, decision = ?, status = ?, summary = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [actual_max_loss, actual_tacos, decision, status, summary, id]
+        );
+
+        if (decision === 'MAINTENANCE') {
+            await runSql("UPDATE sprint_projects SET status = 'MAINTENANCE', updated_at = NOW() WHERE id = ?", [
+                review.sprint_id
+            ]);
+        } else if (decision === 'STOPPED') {
+            await runSql("UPDATE sprint_projects SET status = 'STOPPED', updated_at = NOW() WHERE id = ?", [review.sprint_id]);
+        } else if (decision === 'CONTINUE') {
+            await runSql("UPDATE sprint_projects SET status = 'ACTIVE', updated_at = NOW() WHERE id = ?", [review.sprint_id]);
+        }
+
+        res.redirect('/reviews?sprint_id=' + review.sprint_id);
+    } catch (e) {
+        const id = Number(req.params.id);
+        const review = await queryOne(
+            `SELECT wr.*, sp.asin
+             FROM weekly_reviews wr
+             JOIN sprint_projects sp ON wr.sprint_id = sp.id
+             WHERE wr.id = ?`,
+            [id]
+        );
+        res.status(400).render('review_form', { review: { ...review, ...req.body }, error: e.message, title: '周复盘填写' });
+    }
+});
+
+app.get('/metrics/manual', async (req, res) => {
+    try {
+        const now = new Date();
+        const current_date = toDateString(now);
+        const prefill = await queryAll("SELECT asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE') ORDER BY id DESC");
+        res.render('metrics_manual', { current_date, prefill, title: '每日数据填报' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/api/v1/metrics/upload', async (req, res) => {
+    try {
+        const source = String(req.body.source || '').trim();
+        const dateStr = String(req.body.date || '').trim();
+        const data = Array.isArray(req.body.data) ? req.body.data : null;
+        if (!['MANUAL', 'RPA_BOT'].includes(source)) return res.status(400).json({ error: 'source 不合法' });
+        if (!parseYmd(dateStr)) return res.status(400).json({ error: 'date 不合法，需 YYYY-MM-DD' });
+        if (!data || data.length === 0) return res.status(400).json({ error: 'data 不能为空' });
+
+        const asins = [];
+        for (const row of data) {
+            const asin = String(row.asin || '').trim();
+            if (!asin) continue;
+            const sessions = row.sessions !== undefined ? Number(row.sessions) : null;
+            const orders = row.orders !== undefined ? Number(row.orders) : null;
+            const impressions = row.impressions !== undefined ? Number(row.impressions) : null;
+            const clicks = row.clicks !== undefined ? Number(row.clicks) : null;
+            const ad_spend = row.ad_spend !== undefined ? Number(row.ad_spend) : null;
+            const ad_sales = row.ad_sales !== undefined ? Number(row.ad_sales) : null;
+            const total_sales = row.total_sales !== undefined ? Number(row.total_sales) : null;
+            const ad_orders = row.ad_orders !== undefined ? Number(row.ad_orders) : null;
+            const core_kw_rank = row.core_kw_rank !== undefined ? Number(row.core_kw_rank) : null;
+            const bsr_rank = row.bsr_rank !== undefined ? Number(row.bsr_rank) : null;
+
+            const acos = ad_sales && Number(ad_sales) > 0 && ad_spend !== null ? Number(ad_spend) / Number(ad_sales) * 100 : null;
+            const tacos = total_sales && Number(total_sales) > 0 && ad_spend !== null ? Number(ad_spend) / Number(total_sales) * 100 : null;
+            const ctr = impressions && Number(impressions) > 0 && clicks !== null ? Number(clicks) / Number(impressions) : null;
+            const cvr = clicks && Number(clicks) > 0 && orders !== null ? Number(orders) / Number(clicks) : null;
+
+            await runSql(
+                `INSERT INTO daily_asin_metrics
+                 (asin, record_date, data_source, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, acos, tacos, ctr, cvr)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                 data_source = VALUES(data_source),
+                 sessions = VALUES(sessions),
+                 orders = VALUES(orders),
+                 impressions = VALUES(impressions),
+                 clicks = VALUES(clicks),
+                 ad_spend = VALUES(ad_spend),
+                 ad_sales = VALUES(ad_sales),
+                 total_sales = VALUES(total_sales),
+                 ad_orders = VALUES(ad_orders),
+                 core_kw_rank = VALUES(core_kw_rank),
+                 bsr_rank = VALUES(bsr_rank),
+                 acos = VALUES(acos),
+                 tacos = VALUES(tacos),
+                 ctr = VALUES(ctr),
+                 cvr = VALUES(cvr),
+                 updated_at = NOW()`,
+                [
+                    asin,
+                    dateStr,
+                    source,
+                    sessions !== null && Number.isFinite(sessions) ? Math.trunc(sessions) : null,
+                    orders !== null && Number.isFinite(orders) ? Math.trunc(orders) : null,
+                    impressions !== null && Number.isFinite(impressions) ? Math.trunc(impressions) : null,
+                    clicks !== null && Number.isFinite(clicks) ? Math.trunc(clicks) : null,
+                    ad_spend !== null && Number.isFinite(ad_spend) ? ad_spend : null,
+                    ad_sales !== null && Number.isFinite(ad_sales) ? ad_sales : null,
+                    total_sales !== null && Number.isFinite(total_sales) ? total_sales : null,
+                    ad_orders !== null && Number.isFinite(ad_orders) ? Math.trunc(ad_orders) : null,
+                    core_kw_rank !== null && Number.isFinite(core_kw_rank) ? Math.trunc(core_kw_rank) : null,
+                    bsr_rank !== null && Number.isFinite(bsr_rank) ? Math.trunc(bsr_rank) : null,
+                    acos !== null && Number.isFinite(acos) ? acos : null,
+                    tacos !== null && Number.isFinite(tacos) ? tacos : null,
+                    ctr !== null && Number.isFinite(ctr) ? ctr : null,
+                    cvr !== null && Number.isFinite(cvr) ? cvr : null
+                ]
+            );
+            asins.push(asin);
+        }
+
+        setImmediate(() => {
+            runPostIngestionRules(Array.from(new Set(asins)), dateStr).catch(e => console.error('Async rules error', e));
+        });
+
+        res.json({ status: 'ok', processed: asins.length });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/tickets', async (req, res) => {
+    try {
+        const asin = String(req.query.asin || '').trim();
+        const status = String(req.query.status || '').trim();
+        const owner_id = req.query.owner_id ? Number(req.query.owner_id) : null;
+        const where = ['1=1'];
+        const params = [];
+        if (asin) {
+            where.push('t.asin LIKE ?');
+            params.push(`%${asin}%`);
+        }
+        if (status) {
+            where.push('t.status = ?');
+            params.push(status);
+        }
+        if (owner_id) {
+            where.push('t.owner_id = ?');
+            params.push(owner_id);
+        }
+        const tickets = await queryAll(
+            `SELECT t.*,
+                    u1.name AS owner_name,
+                    u2.name AS co_owner_name,
+                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
+             FROM issue_tickets t
+             LEFT JOIN users u1 ON t.owner_id = u1.id
+             LEFT JOIN users u2 ON t.co_owner_id = u2.id
+             WHERE ${where.join(' AND ')}
+             ORDER BY FIELD(t.status,'TODO','PENDING_DESIGN','WAITING_VERIFY','FAILED','RESOLVED'), t.sla_deadline IS NULL, t.sla_deadline ASC, t.id DESC`,
+            params
+        );
+        const now = new Date();
+        for (const t of tickets) {
+            t.sla_deadline = t.sla_deadline_fmt || null;
+            t.is_overdue = t.sla_deadline && new Date(t.sla_deadline.replace(' ', 'T')).getTime() < now.getTime();
+        }
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.render('tickets', {
+            tickets,
+            users,
+            current_asin: asin,
+            current_status: status,
+            current_owner_id: owner_id ? String(owner_id) : '',
+            title: '工单看板'
+        });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.get('/tickets/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const ticket = await queryOne(
+            `SELECT t.*,
+                    u1.name AS owner_name,
+                    u2.name AS co_owner_name,
+                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
+             FROM issue_tickets t
+             LEFT JOIN users u1 ON t.owner_id = u1.id
+             LEFT JOIN users u2 ON t.co_owner_id = u2.id
+             WHERE t.id = ?`,
+            [id]
+        );
+        if (!ticket) return res.status(404).send('工单不存在');
+        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        res.render('ticket_detail', { ticket, users, error: null, title: '工单详情' });
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/tickets/:id/assign', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const owner_id = req.body.owner_id ? Number(req.body.owner_id) : null;
+        const co_owner_id = req.body.co_owner_id ? Number(req.body.co_owner_id) : null;
+        await runSql('UPDATE issue_tickets SET owner_id = ?, co_owner_id = ?, updated_at = NOW() WHERE id = ?', [
+            owner_id || null,
+            co_owner_id || null,
+            id
+        ]);
+        res.redirect('/tickets/' + id);
+    } catch (e) {
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/tickets/:id/status', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const status = String(req.body.status || '').trim();
+        if (!['TODO', 'PENDING_DESIGN', 'WAITING_VERIFY', 'RESOLVED', 'FAILED'].includes(status)) {
+            throw new Error('状态不合法');
+        }
+        if (status === 'RESOLVED' || status === 'FAILED') {
+            const row = await queryOne('SELECT verify_evidence, verify_file_url FROM issue_tickets WHERE id = ?', [id]);
+            const hasEvidence = row && ((row.verify_evidence && String(row.verify_evidence).trim()) || row.verify_file_url);
+            if (!hasEvidence) throw new Error('结单必须填写验收指标或上传凭证');
+            await runSql('UPDATE issue_tickets SET status = ?, resolved_at = NOW(), updated_at = NOW() WHERE id = ?', [status, id]);
+        } else {
+            await runSql('UPDATE issue_tickets SET status = ?, updated_at = NOW() WHERE id = ?', [status, id]);
+        }
+        res.redirect('/tickets/' + id);
+    } catch (e) {
+        const id = Number(req.params.id);
+        const ticket = await queryOne(
+            `SELECT t.*,
+                    u1.name AS owner_name,
+                    u2.name AS co_owner_name,
+                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
+             FROM issue_tickets t
+             LEFT JOIN users u1 ON t.owner_id = u1.id
+             LEFT JOIN users u2 ON t.co_owner_id = u2.id
+             WHERE t.id = ?`,
+            [id]
+        );
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
+        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
+    }
+});
+
+app.post('/tickets/:id/design-request', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const design_request = String(req.body.design_request || '').trim();
+        if (!design_request) throw new Error('修改意见不能为空');
+        await runSql(
+            "UPDATE issue_tickets SET design_request = ?, status = 'PENDING_DESIGN', updated_at = NOW() WHERE id = ?",
+            [design_request, id]
+        );
+        res.redirect('/tickets/' + id);
+    } catch (e) {
+        const id = Number(req.params.id);
+        const ticket = await queryOne(
+            `SELECT t.*,
+                    u1.name AS owner_name,
+                    u2.name AS co_owner_name,
+                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
+             FROM issue_tickets t
+             LEFT JOIN users u1 ON t.owner_id = u1.id
+             LEFT JOIN users u2 ON t.co_owner_id = u2.id
+             WHERE t.id = ?`,
+            [id]
+        );
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
+        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
+    }
+});
+
+app.post('/tickets/:id/design-asset', fileUpload.single('file'), async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!req.file) throw new Error('请上传文件');
+        const url = '/uploads/' + req.file.filename;
+        await runSql(
+            "UPDATE issue_tickets SET design_asset_url = ?, status = 'WAITING_VERIFY', updated_at = NOW() WHERE id = ?",
+            [url, id]
+        );
+        res.redirect('/tickets/' + id);
+    } catch (e) {
+        const id = Number(req.params.id);
+        const ticket = await queryOne(
+            `SELECT t.*,
+                    u1.name AS owner_name,
+                    u2.name AS co_owner_name,
+                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
+             FROM issue_tickets t
+             LEFT JOIN users u1 ON t.owner_id = u1.id
+             LEFT JOIN users u2 ON t.co_owner_id = u2.id
+             WHERE t.id = ?`,
+            [id]
+        );
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
+        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
+    }
+});
+
+app.post('/tickets/:id/verify', fileUpload.single('file'), async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const result = String(req.body.result || '').trim();
+        const verify_evidence = String(req.body.verify_evidence || '').trim();
+        const verify_file_url = req.file ? '/uploads/' + req.file.filename : null;
+        if (!['RESOLVED', 'FAILED'].includes(result)) throw new Error('验收结果不合法');
+        if (!verify_evidence && !verify_file_url) throw new Error('必须填写验收指标或上传凭证');
+
+        await runSql(
+            `UPDATE issue_tickets SET
+             verify_evidence = ?, verify_file_url = COALESCE(?, verify_file_url),
+             status = ?, resolved_at = NOW(), updated_at = NOW()
+             WHERE id = ?`,
+            [verify_evidence || null, verify_file_url, result, id]
+        );
+        res.redirect('/tickets/' + id);
+    } catch (e) {
+        const id = Number(req.params.id);
+        const ticket = await queryOne(
+            `SELECT t.*,
+                    u1.name AS owner_name,
+                    u2.name AS co_owner_name,
+                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
+             FROM issue_tickets t
+             LEFT JOIN users u1 ON t.owner_id = u1.id
+             LEFT JOIN users u2 ON t.co_owner_id = u2.id
+             WHERE t.id = ?`,
+            [id]
+        );
+        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
+        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
+    }
+});
+
+async function runDailyTicketScan(targetDateStr) {
+    const ctrBenchmark = Number(await getSetting('ctr_benchmark', '0.003'));
+    const cvrBenchmark = Number(await getSetting('cvr_benchmark', '0.08'));
+    const bsrDropThreshold = Number(await getSetting('bsr_drop_threshold', '10'));
+    const designUserId = await getDefaultDesignUserId();
+
+    const rows = await queryAll(
+        `SELECT m.*, sp.id AS sprint_id, sp.owner_id, sp.acos_limit
+         FROM daily_asin_metrics m
+         JOIN sprint_projects sp ON sp.asin = m.asin
+         WHERE m.record_date = ? AND sp.status IN ('ACTIVE','MAINTENANCE')`,
+        [targetDateStr]
+    );
+
+    for (const r of rows) {
+        const asin = r.asin;
+        const sprintId = r.sprint_id;
+        const ownerId = r.owner_id || null;
+
+        if (Number(r.impressions || 0) > 1000 && r.ctr !== null && r.ctr !== undefined && Number(r.ctr) < ctrBenchmark) {
+            if (!(await ticketExists(asin, 'CTR_LOW', targetDateStr))) {
+                const deadline = toDateString(addDays(parseYmd(targetDateStr), 3)) + ' 23:59:59';
+                await createTicket({
+                    sprint_id: sprintId,
+                    asin,
+                    ticket_type: 'CTR_LOW',
+                    severity: 'B',
+                    owner_id: ownerId,
+                    co_owner_id: designUserId,
+                    status: 'TODO',
+                    sla_deadline: deadline,
+                    trigger_reason: `曝光=${r.impressions}, CTR=${Number(r.ctr).toFixed(4)} < 标准=${ctrBenchmark}`
+                });
+            }
+        }
+
+        if (Number(r.clicks || 0) > 50 && r.cvr !== null && r.cvr !== undefined && Number(r.cvr) < cvrBenchmark) {
+            if (!(await ticketExists(asin, 'CVR_LOW', targetDateStr))) {
+                const deadline = toDateString(addDays(parseYmd(targetDateStr), 7)) + ' 23:59:59';
+                await createTicket({
+                    sprint_id: sprintId,
+                    asin,
+                    ticket_type: 'CVR_LOW',
+                    severity: 'B',
+                    owner_id: ownerId,
+                    co_owner_id: designUserId,
+                    status: 'TODO',
+                    sla_deadline: deadline,
+                    trigger_reason: `点击=${r.clicks}, CVR=${Number(r.cvr).toFixed(4)} < 标准=${cvrBenchmark}`
+                });
+            }
+        }
+
+        if (r.acos !== null && r.acos !== undefined && r.acos_limit !== null && r.acos_limit !== undefined) {
+            if (Number(r.acos) > Number(r.acos_limit)) {
+                if (!(await ticketExists(asin, 'ACOS_HIGH', targetDateStr))) {
+                    const deadline = targetDateStr + ' 23:59:59';
+                    await createTicket({
+                        sprint_id: sprintId,
+                        asin,
+                        ticket_type: 'ACOS_HIGH',
+                        severity: 'A',
+                        owner_id: ownerId,
+                        co_owner_id: null,
+                        status: 'TODO',
+                        sla_deadline: deadline,
+                        trigger_reason: `昨日ACOS=${Number(r.acos).toFixed(2)}% > 上限=${Number(r.acos_limit).toFixed(2)}%`
+                    });
+                }
+            }
+        }
+
+        if (Number(r.ad_orders || 0) > 3 && r.bsr_rank !== null && r.bsr_rank !== undefined) {
+            const end = addDays(parseYmd(targetDateStr), -1);
+            const start = addDays(end, -6);
+            const avgRow = await queryOne(
+                `SELECT AVG(bsr_rank) AS avg_bsr
+                 FROM daily_asin_metrics
+                 WHERE asin = ? AND record_date BETWEEN ? AND ? AND bsr_rank IS NOT NULL`,
+                [asin, toDateString(start), toDateString(end)]
+            );
+            const avgBsr = avgRow && avgRow.avg_bsr !== null && avgRow.avg_bsr !== undefined ? Number(avgRow.avg_bsr) : null;
+            if (avgBsr !== null) {
+                const drop = Number(r.bsr_rank) - avgBsr;
+                if (drop >= bsrDropThreshold) {
+                    if (!(await ticketExists(asin, 'RANK_DROP', targetDateStr))) {
+                        const deadline = toDateString(addDays(parseYmd(targetDateStr), 7)) + ' 23:59:59';
+                        await createTicket({
+                            sprint_id: sprintId,
+                            asin,
+                            ticket_type: 'RANK_DROP',
+                            severity: 'B',
+                            owner_id: ownerId,
+                            co_owner_id: null,
+                            status: 'TODO',
+                            sla_deadline: deadline,
+                            trigger_reason: `广告单量=${r.ad_orders}, BSR=${r.bsr_rank}, 近7日均值=${avgBsr.toFixed(2)}, 变差=${drop.toFixed(2)} >= 阈值=${bsrDropThreshold}`
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+async function schedulerTick() {
+    if (!dbReady) return;
+    const now = new Date();
+    const weekStartStr = toDateString(getMondayStart(now));
+    const currentWeekKey = await getSetting('weekly_review_generated_week', '');
+    if (currentWeekKey !== weekStartStr) {
+        await ensureWeeklyReviewsForActiveSprints(weekStartStr);
+        await setSetting('weekly_review_generated_week', weekStartStr);
+    }
+
+    const targetDateStr = toDateString(addDays(now, -1));
+    const lastScan = await getSetting('daily_ticket_scan_date', '');
+    if (lastScan !== targetDateStr && (now.getHours() > 0 || now.getMinutes() >= 10)) {
+        await runDailyTicketScan(targetDateStr);
+        await setSetting('daily_ticket_scan_date', targetDateStr);
+    }
+}
+
+setInterval(() => {
+    schedulerTick().catch(e => console.error('Scheduler error:', e));
+}, 60 * 1000);
+
+schedulerTick().catch(e => console.error('Scheduler error:', e));
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {

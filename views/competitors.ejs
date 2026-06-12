@@ -51,7 +51,7 @@
                     <tbody>
                         <% if (!competitors || competitors.length === 0) { %>
                         <tr>
-                            <td colspan="7" style="text-align:center; padding:40px; color:#999;">
+                            <td colspan="8" style="text-align:center; padding:40px; color:#999;">
                                 <%= keyword ? ('未找到品牌名包含“' + keyword + '”的竞品') : '暂无竞品数据，可点击右上角“新增竞品”' %>
                             </td>
                         </tr>
@@ -79,9 +79,8 @@
                                     <span style="color:var(--text-secondary);">-</span>
                                 <% } else { %>
                                     <div style="display:flex; gap:10px; align-items:flex-start;">
-                                        <a href="<%= monitor.image_url %>" target="_blank" rel="noreferrer" style="display:inline-flex;">
-                                            <img src="<%= monitor.image_url %>" alt="监控图片" style="width:68px; height:68px; object-fit:cover; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc;">
-                                        </a>
+                                        <!-- ?imageView2/1/w/200/h/200 -->
+                                        <img src="<%= monitor.image_url %>" alt="监控图片" class="zoomable" onclick="openViewer('<%= monitor.image_url %>')" style="width:68px; height:68px; object-fit:cover; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc;">
                                         <div style="min-width:0; flex:1;">
                                             <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;"><%= fmt(monitor.created_at) %></div>
                                             <div style="margin-bottom:6px;">
@@ -540,11 +539,9 @@
                         </span>
                     </div>
                     <div style="display:flex; gap:12px; align-items:flex-start;">
-                        <a href="${imageUrl}" target="_blank" rel="noreferrer" style="display:inline-flex;">
-                            <img src="${imageUrl}" alt="监控图片" style="width:120px; height:120px; object-fit:cover; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc;">
-                        </a>
+                        <img src="${imageUrl}" alt="监控图片" class="zoomable" onclick="openViewer(this.src)" style="width:120px; height:120px; object-fit:cover; border-radius:8px; border:1px solid var(--border-color); background:#f8fafc;">
                         <div style="min-width:0; flex:1; display:flex; flex-direction:column; gap:8px;">
-                            <a href="${imageUrl}" target="_blank" rel="noreferrer" style="font-size:12px; color:var(--primary); text-decoration:none;">查看原图</a>
+                            <a href="javascript:void(0);" data-src="${imageUrl}" onclick="openViewer(this.dataset.src)" style="font-size:12px; color:var(--primary); text-decoration:none;">点击放大</a>
                             ${actionText}
                         </div>
                     </div>

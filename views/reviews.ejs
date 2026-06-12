@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+</head>
+<body>
+    <div class="app">
+        <%- include('sidebar', { active: 'sprints' }) %>
+        <main class="main-content">
+            <a href="/sprints" class="back-link">← 返回冲刺项目</a>
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                    <div>
+                        <h1>周复盘</h1>
+                        <div class="page-desc">每周一 00:00 自动生成 ACTIVE 项目的复盘待办</div>
+                    </div>
+                    <form method="get" action="/reviews" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                        <select class="filter-select" name="sprint_id" onchange="this.form.submit()">
+                            <option value="">全部项目</option>
+                            <% (sprints || []).forEach(sp => { %>
+                            <option value="<%= sp.id %>" <%= String(current_sprint_id||'') === String(sp.id) ? 'selected' : '' %>><%= sp.asin %> (<%= sp.status %>)</option>
+                            <% }) %>
+                        </select>
+                        <select class="filter-select" name="status" onchange="this.form.submit()">
+                            <option value="">全部状态</option>
+                            <option value="PENDING" <%= current_status === 'PENDING' ? 'selected' : '' %>>PENDING</option>
+                            <option value="COMPLETED" <%= current_status === 'COMPLETED' ? 'selected' : '' %>>COMPLETED</option>
+                        </select>
+                    </form>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="product-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width:60px">ID</th>
+                            <th style="min-width:120px">ASIN</th>
+                            <th style="min-width:120px">状态</th>
+                            <th style="min-width:140px">周起始日</th>
+                            <th style="min-width:160px">本周最大亏损</th>
+                            <th style="min-width:140px">当前TACOS</th>
+                            <th style="min-width:160px">决策</th>
+                            <th style="min-width:200px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (!reviews || reviews.length === 0) { %>
+                        <tr>
+                            <td colspan="8" style="text-align:center; padding:40px; color:#999;">暂无复盘记录</td>
+                        </tr>
+                        <% } %>
+                        <% (reviews || []).forEach(r => { %>
+                        <tr>
+                            <td><%= r.id %></td>
+                            <td><code><%= r.asin %></code></td>
+                            <td><span class="status-badge"><%= r.status %></span></td>
+                            <td><%= r.week_start_date %></td>
+                            <td><%= r.actual_max_loss === null ? '-' : r.actual_max_loss %></td>
+                            <td><%= r.actual_tacos === null ? '-' : r.actual_tacos %></td>
+                            <td><%= r.decision || '-' %></td>
+                            <td>
+                                <a class="btn-sm" href="/reviews/<%= r.id %>">填写/查看</a>
+                                <a class="btn-sm" href="/tickets?asin=<%= r.asin %>">查看工单</a>
+                            </td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
+
