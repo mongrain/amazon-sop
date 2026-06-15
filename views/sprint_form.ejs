@@ -57,7 +57,7 @@
                             </div>
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">目标周期(天)</div>
-                                <input class="search-input" style="width:100%;" type="number" name="target_cycle_days" min="1" value="<%= sprint && sprint.target_cycle_days ? sprint.target_cycle_days : 14 %>" required>
+                                <input class="search-input" style="width:100%;" type="number" name="target_cycle_days" min="0" step="any" value="<%= sprint && sprint.target_cycle_days !== null && sprint.target_cycle_days !== undefined ? sprint.target_cycle_days : 14 %>" required>
                             </div>
                         </div>
                     </div>
@@ -71,11 +71,11 @@
                         <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px;">
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">当前日均单量</div>
-                                <input class="search-input" style="width:100%;" type="number" name="current_daily_orders" min="0" value="<%= sprint && sprint.current_daily_orders !== null ? sprint.current_daily_orders : '' %>">
+                                <input class="search-input" style="width:100%;" type="number" name="current_daily_orders" min="0" step="any" value="<%= sprint && sprint.current_daily_orders !== null ? sprint.current_daily_orders : '' %>">
                             </div>
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">目标日均单量</div>
-                                <input class="search-input" style="width:100%;" type="number" name="target_daily_orders" min="0" value="<%= sprint && sprint.target_daily_orders !== null ? sprint.target_daily_orders : '' %>">
+                                <input class="search-input" style="width:100%;" type="number" name="target_daily_orders" min="0" step="any" value="<%= sprint && sprint.target_daily_orders !== null ? sprint.target_daily_orders : '' %>">
                             </div>
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">当前排名</div>

@@ -581,6 +581,11 @@ function normalizeUrl(url) {
 function normalizeMonitorImageUrl(url) {
     const normalized = normalizeUrl(url);
     if (!normalized) return null;
+    // sellersprite.com 域名的不需要修改
+    if (normalized.includes('sellersprite.com')) {
+        // url 中 http 和 https 均需要修改为 https
+        return normalized.replace(/^https?:\/\//i, 'https://');
+    }
     return normalized.replace(/^https:\/\//i, 'http://');
 }
 
@@ -1449,8 +1454,8 @@ app.post('/sprints', async (req, res) => {
                 start_date,
                 end_date,
                 target_cycle_days,
-                intOrNull(req.body.current_daily_orders),
-                intOrNull(req.body.target_daily_orders),
+                numOrNull(req.body.current_daily_orders),
+                numOrNull(req.body.target_daily_orders),
                 intOrNull(req.body.current_rank),
                 intOrNull(req.body.target_rank),
                 numOrNull(req.body.promo_tacos_limit),
@@ -1526,8 +1531,8 @@ app.post('/sprints/:id', async (req, res) => {
                 start_date,
                 end_date,
                 target_cycle_days,
-                intOrNull(req.body.current_daily_orders),
-                intOrNull(req.body.target_daily_orders),
+                numOrNull(req.body.current_daily_orders),
+                numOrNull(req.body.target_daily_orders),
                 intOrNull(req.body.current_rank),
                 intOrNull(req.body.target_rank),
                 numOrNull(req.body.promo_tacos_limit),

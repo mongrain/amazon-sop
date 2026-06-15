@@ -97,18 +97,14 @@ async function initDb() {
     try {
         await p.query('ALTER TABLE sop_items ADD COLUMN image_url VARCHAR(500) DEFAULT NULL AFTER instruction_text');
     } catch (e) {
-        if (!isSafeMigrationError(e)) {
-            // Silently skip
-        }
+        if (!isSafeMigrationError(e)) {}
     }
 
     // Ensure image_url column exists in product_sop_records (migration)
     try {
         await p.query('ALTER TABLE product_sop_records ADD COLUMN image_url VARCHAR(500) DEFAULT NULL AFTER remark');
     } catch (e) {
-        if (!isSafeMigrationError(e)) {
-            // Silently skip
-        }
+        if (!isSafeMigrationError(e)) {}
     }
 
     // Ensure product_versions table exists (migration)
@@ -133,9 +129,7 @@ async function initDb() {
     try {
         await p.query('ALTER TABLE competitors ADD COLUMN brand_category VARCHAR(200) DEFAULT NULL AFTER brand_name');
     } catch (e) {
-        if (!isSafeMigrationError(e)) {
-            // Silently skip
-        }
+        if (!isSafeMigrationError(e)) {}
     }
 
     // Ensure competitor_actions table exists (migration)
@@ -190,9 +184,9 @@ async function initDb() {
             status ENUM('ACTIVE','MAINTENANCE','STOPPED') NOT NULL DEFAULT 'ACTIVE',
             start_date DATE NOT NULL,
             end_date DATE NOT NULL,
-            target_cycle_days INT NOT NULL DEFAULT 14,
-            current_daily_orders INT DEFAULT NULL,
-            target_daily_orders INT DEFAULT NULL,
+            target_cycle_days DECIMAL(10,2) NOT NULL DEFAULT 14.00 COMMENT '目标周期天数(可为小数)',
+            current_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '当前日均单量(可为小数)',
+            target_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '目标日均单量(可为小数)',
             current_rank INT DEFAULT NULL,
             target_rank INT DEFAULT NULL,
             promo_tacos_limit DECIMAL(10,2) DEFAULT NULL,
@@ -213,6 +207,17 @@ async function initDb() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e) {
         // Silently skip
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects
+             MODIFY COLUMN target_cycle_days DECIMAL(10,2) NOT NULL DEFAULT 14.00 COMMENT '目标周期天数(可为小数)',
+             MODIFY COLUMN current_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '当前日均单量(可为小数)',
+             MODIFY COLUMN target_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '目标日均单量(可为小数)'`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
     }
 
     try {
