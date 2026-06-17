@@ -642,3 +642,172 @@ body {
     .stat-card { padding: 12px 16px; }
     .stat-number { font-size: 22px; }
 }
+
+.annual-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.annual-item {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 14px;
+    align-items: stretch;
+}
+
+.annual-marker {
+    position: relative;
+    padding-top: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.annual-marker::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: -14px;
+    left: 50%;
+    width: 2px;
+    background: #e8ecf0;
+    transform: translateX(-50%);
+}
+
+.annual-item:last-child .annual-marker::before {
+    bottom: 0;
+}
+
+.annual-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--primary);
+    border: 3px solid #e6f2ff;
+    z-index: 1;
+}
+
+.annual-month {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    background: #f5f7fa;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    z-index: 1;
+    white-space: nowrap;
+}
+
+.annual-card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.annual-card-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 10px;
+    align-items: start;
+}
+
+.annual-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    padding-top: 6px;
+}
+
+.annual-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    background: #fff;
+}
+
+.annual-input:focus {
+    border-color: var(--primary);
+}
+
+.annual-textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    resize: vertical;
+    min-height: 96px;
+    font-family: inherit;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.annual-textarea:focus {
+    border-color: var(--primary);
+}
+
+.mode-preview .annual-edit {
+    display: none !important;
+}
+
+.mode-edit .annual-preview {
+    display: none !important;
+}
+
+.annual-title-view {
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text);
+    background: #f5f7fa;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+}
+
+.annual-markdown {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.7;
+    min-height: 120px;
+    overflow: auto;
+}
+
+.annual-markdown.markdown-body {
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.annual-markdown.markdown-body img {
+    border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+    .annual-item {
+        grid-template-columns: 72px 1fr;
+    }
+    .annual-card-row {
+        grid-template-columns: 1fr;
+    }
+    .annual-label {
+        padding-top: 0;
+    }
+}

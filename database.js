@@ -163,6 +163,22 @@ async function initDb() {
     }
 
     try {
+        await p.query(`CREATE TABLE IF NOT EXISTS annual_activities (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            year INT NOT NULL,
+            month TINYINT NOT NULL,
+            activity_title VARCHAR(500) DEFAULT NULL,
+            action_plan TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_year_month (year, month),
+            INDEX idx_year (year)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
         await p.query(`CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) NOT NULL,

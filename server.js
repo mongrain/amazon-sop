@@ -17,6 +17,7 @@ const {
 } = require('./database');
 const { importExcel, EXCEL_PATH } = require('./importer');
 const sopData = require('./sop-data');
+const { upload: uploadToRemote } = require('./service/upload');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,7 +27,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
-app.set('view cache', true);
+app.set('view cache', process.env.NODE_ENV === 'production');
 app.set('views', path.join(__dirname, 'views'));
 
 // Multer config for image uploads
@@ -441,6 +442,116 @@ app.get('/import', async (req, res) => {
 app.post('/import', async (req, res) => {
     const result = await importExcel();
     res.render('import_page', { result, import_path: EXCEL_PATH, title: '导入数据' });
+});
+
+app.post('/api/annual-activities/image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file || !req.file.path) {
+            return res.status(400).json({ error: '未找到图片文件' });
+        }
+        const localPath = req.file.path;
+        const result = await uploadToRemote(localPath, { uploadPrefix: 'annual-activities' });
+        try {
+            fs.unlinkSync(localPath);
+        } catch (e) {}
+        res.json({ url: result.public_url, key: result.key });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/annual-activities', async (req, res) => {
+    try {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const year = Math.min(2100, Math.max(2000, parseInt(req.query.year) || currentYear));
+        const saved = String(req.query.saved || '') === '1';
+        const syncedFromYearRaw = parseInt(req.query.synced_from);
+        const syncedFromYear = Number.isFinite(syncedFromYearRaw) ? syncedFromYearRaw : null;
+
+        const rows = await queryAll('SELECT year, month, activity_title, action_plan FROM annual_activities WHERE year = ? ORDER BY month ASC', [year]);
+        const activitiesMap = {};
+        for (const row of rows) {
+            activitiesMap[row.month] = row;
+        }
+
+        res.render('annual_activities', {
+            year,
+            saved,
+            syncedFromYear,
+            activitiesMap,
+            title: '年度活动'
+        });
+    } catch (e) {
+        console.error('Annual activities page error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/annual-activities/sync', async (req, res) => {
+    try {
+        const fromYearRaw = parseInt(req.body.from_year);
+        const toYearRaw = parseInt(req.body.to_year);
+        const from_year = Math.min(2100, Math.max(2000, Number.isFinite(fromYearRaw) ? fromYearRaw : new Date().getFullYear() - 1));
+        const to_year = Math.min(2100, Math.max(2000, Number.isFinite(toYearRaw) ? toYearRaw : new Date().getFullYear()));
+
+        if (from_year === to_year) {
+            return res.status(400).send('源年份与目标年份不能相同');
+        }
+
+        await runSql('DELETE FROM annual_activities WHERE year = ?', [to_year]);
+        await runSql(
+            `INSERT INTO annual_activities (year, month, activity_title, action_plan, created_at, updated_at)
+             SELECT ?, month, activity_title, action_plan, NOW(), NOW()
+             FROM annual_activities WHERE year = ?`,
+            [to_year, from_year]
+        );
+
+        res.redirect(`/annual-activities?year=${encodeURIComponent(String(to_year))}&saved=1&synced_from=${encodeURIComponent(String(from_year))}`);
+    } catch (e) {
+        console.error('Annual activities sync error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/annual-activities/save', async (req, res) => {
+    try {
+        const year = Math.min(2100, Math.max(2000, parseInt(req.body.year) || new Date().getFullYear()));
+
+        for (let month = 1; month <= 12; month++) {
+            const titleKey = `title_${month}`;
+            const planKey = `plan_${month}`;
+            const activity_title = String(req.body[titleKey] || '').trim() || null;
+            const action_plan = String(req.body[planKey] || '').trim() || null;
+
+            if (activity_title && activity_title.length > 500) {
+                return res.status(400).send(`第 ${month} 月主要活动过长（最多 500 字符）`);
+            }
+            if (action_plan && action_plan.length > 20000) {
+                return res.status(400).send(`第 ${month} 月“开展时需要做什么”过长（最多 20000 字符）`);
+            }
+
+            if (!activity_title && !action_plan) {
+                await runSql('DELETE FROM annual_activities WHERE year = ? AND month = ?', [year, month]);
+                continue;
+            }
+
+            await runSql(
+                `INSERT INTO annual_activities (year, month, activity_title, action_plan)
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    activity_title = VALUES(activity_title),
+                    action_plan = VALUES(action_plan),
+                    updated_at = NOW()`,
+                [year, month, activity_title, action_plan]
+            );
+        }
+
+        res.redirect(`/annual-activities?year=${encodeURIComponent(String(year))}&saved=1`);
+    } catch (e) {
+        console.error('Annual activities save error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
 });
 
 app.get('/competitors', async (req, res) => {
@@ -1057,7 +1168,12 @@ app.post('/api/sop/item/:id/image', upload.single('image'), async (req, res) => 
     try {
         const { id } = req.params;
         if (!req.file) return res.status(400).json({ error: '未选择图片' });
-        const imageUrl = '/uploads/' + req.file.filename;
+        const localPath = req.file.path;
+        const result = await uploadToRemote(localPath, { uploadPrefix: 'sop-template' });
+        try {
+            fs.unlinkSync(localPath);
+        } catch (e) {}
+        const imageUrl = result.public_url;
         await runSql('UPDATE sop_items SET image_url = ? WHERE id = ?', [imageUrl, id]);
         res.json({ status: 'ok', image_url: imageUrl });
     } catch (e) {
@@ -1084,7 +1200,12 @@ app.post('/api/record/:recordId/image', upload.single('image'), async (req, res)
     try {
         const { recordId } = req.params;
         if (!req.file) return res.status(400).json({ error: '未选择图片' });
-        const imageUrl = '/uploads/' + req.file.filename;
+        const localPath = req.file.path;
+        const result = await uploadToRemote(localPath, { uploadPrefix: 'product-sop-record' });
+        try {
+            fs.unlinkSync(localPath);
+        } catch (e) {}
+        const imageUrl = result.public_url;
         const rec = await queryOne('SELECT image_url FROM product_sop_records WHERE id = ?', [recordId]);
         let images = [];
         if (rec && rec.image_url) {

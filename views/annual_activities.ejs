@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it-footnote@4.0.0/dist/markdown-it-footnote.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body class="mode-preview">
+    <div class="app">
+        <%- include('sidebar', { active: 'annual_activities' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <h1>年度活动</h1>
+                        <div class="page-desc">按月维护主要活动与开展要点（1月 → 12月）</div>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <form method="get" action="/annual-activities" style="display:flex; gap:8px; align-items:center;">
+                            <span style="color:var(--text-secondary); font-size:13px;">年份</span>
+                            <input class="search-input" style="width:120px;" type="number" name="year" value="<%= year %>" min="2000" max="2100">
+                            <button class="btn-secondary" type="submit">切换</button>
+                        </form>
+                        <button class="btn-secondary annual-preview" type="button" onclick="openSyncModal()">同步</button>
+                        <button class="btn-secondary annual-preview" type="button" onclick="enterEditMode()">编辑</button>
+                        <button class="btn-secondary annual-edit" type="button" onclick="cancelEditMode()">取消</button>
+                        <button class="btn-primary annual-edit" type="submit" form="annualForm">保存</button>
+                    </div>
+                </div>
+                <% if (saved) { %>
+                    <div style="margin-top:12px; padding:10px 12px; background:#f0f9eb; border:1px solid #e1f3d8; border-radius:8px; color:var(--success); font-size:13px;">
+                        <% if (syncedFromYear) { %>
+                            已从 <%= syncedFromYear %> 年同步并保存
+                        <% } else { %>
+                            已保存
+                        <% } %>
+                    </div>
+                <% } %>
+            </div>
+
+            <form id="annualForm" method="post" action="/annual-activities/save">
+                <input type="hidden" name="year" value="<%= year %>">
+
+                <div class="annual-timeline">
+                    <% for (let m = 1; m <= 12; m++) { %>
+                        <% const data = activitiesMap[m] || {}; %>
+                        <div class="annual-item">
+                            <div class="annual-marker">
+                                <div class="annual-dot"></div>
+                                <div class="annual-month"><%= m %>月</div>
+                            </div>
+                            <div class="annual-card">
+                                <div class="annual-card-row">
+                                    <div class="annual-label">主要活动</div>
+                                    <div>
+                                        <div class="annual-preview annual-title-view"><%= data.activity_title ? data.activity_title : '-' %></div>
+                                        <input
+                                            id="title_<%= m %>"
+                                            name="title_<%= m %>"
+                                            class="annual-edit annual-input"
+                                            type="text"
+                                            maxlength="500"
+                                            placeholder="例如：Prime Day 备战 / 返校季 / 黑五网一预热"
+                                            value="<%= data.activity_title ? data.activity_title : '' %>"
+                                        >
+                                    </div>
+                                </div>
+                                <div class="annual-card-row">
+                                    <div class="annual-label">开展时需要做什么</div>
+                                    <div>
+                                        <div class="annual-preview annual-markdown markdown-body"></div>
+                                        <pre class="annual-md-source" style="display:none;"><%= data.action_plan ? data.action_plan : '' %></pre>
+                                        <textarea
+                                            id="plan_<%= m %>"
+                                            name="plan_<%= m %>"
+                                            class="annual-edit annual-textarea"
+                                            rows="6"
+                                            placeholder="支持 Markdown；可直接粘贴图片自动上传并回填链接"
+                                        ><%= data.action_plan ? data.action_plan : '' %></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <% } %>
+                </div>
+
+                <div class="annual-edit" style="margin-top:18px; display:flex; justify-content:flex-end;">
+                    <button class="btn-primary" type="submit">保存</button>
+                </div>
+            </form>
+
+            <div class="modal-overlay" id="syncModal">
+                <div class="modal-box">
+                    <div class="modal-header">
+                        <h3>同步年度活动</h3>
+                        <button class="modal-close" type="button" onclick="closeSyncModal()">&times;</button>
+                    </div>
+                    <form method="post" action="/annual-activities/sync">
+                        <div class="modal-body">
+                            <div class="form-group">
+                                <label class="required">源年份（从该年复制）</label>
+                                <input type="number" id="fromYear" name="from_year" class="form-input" min="2000" max="2100" value="<%= year - 1 %>">
+                            </div>
+                            <div class="form-group">
+                                <label>目标年份（当前页）</label>
+                                <input type="number" name="to_year" class="form-input" readonly style="background:#f5f5f5;" value="<%= year %>">
+                            </div>
+                            <div class="modal-error" id="syncError"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-cancel" type="button" onclick="closeSyncModal()">取消</button>
+                            <button class="btn-submit" type="submit" onclick="return confirmSync()">确认同步（覆盖）</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    function enterEditMode() {
+        document.body.classList.remove('mode-preview');
+        document.body.classList.add('mode-edit');
+        const first = document.querySelector('.annual-textarea');
+        if (first) first.focus();
+    }
+
+    function cancelEditMode() {
+        location.reload();
+    }
+
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderMarkdownBlocks() {
+        const mdIt = (globalThis.markdownit && typeof globalThis.markdownit === 'function')
+            ? globalThis.markdownit({
+                html: false,
+                linkify: true,
+                typographer: true,
+                breaks: true,
+                highlight: function(str, lang) {
+                    if (!globalThis.hljs) return '';
+                    try {
+                        if (lang && globalThis.hljs.getLanguage(lang)) {
+                            return globalThis.hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+                        }
+                        return globalThis.hljs.highlightAuto(str).value;
+                    } catch (e) {
+                        return '';
+                    }
+                }
+            })
+            : null;
+
+        if (mdIt && globalThis.markdownitTaskLists) {
+            mdIt.use(globalThis.markdownitTaskLists, { enabled: true, label: true, labelAfter: true });
+        }
+        if (mdIt && globalThis.markdownitFootnote) {
+            mdIt.use(globalThis.markdownitFootnote);
+        }
+
+        const blocks = document.querySelectorAll('.annual-markdown');
+        blocks.forEach(block => {
+            const source = block.parentElement ? block.parentElement.querySelector('.annual-md-source') : null;
+            const md = source ? source.textContent : '';
+            const html = mdIt
+                ? mdIt.render(md || '')
+                : `<pre style="white-space:pre-wrap;">${escapeHtml(md)}</pre>`;
+            const safe = globalThis.DOMPurify ? globalThis.DOMPurify.sanitize(html) : html;
+            const shadow = block.shadowRoot || block.attachShadow({ mode: 'open' });
+            const contentHtml = safe || '<span style="color:#909399;">-</span>';
+            shadow.innerHTML = `
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css">
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css">
+                <style>
+                    :host { display: block; }
+                    .markdown-body { padding: 12px 14px; font-size: 13px; line-height: 1.7; }
+                    .markdown-body img { max-width: 100%; border-radius: 8px; }
+                </style>
+                <div class="markdown-body">${contentHtml}</div>
+            `;
+            if (globalThis.hljs) {
+                shadow.querySelectorAll('pre code').forEach(el => {
+                    try { globalThis.hljs.highlightElement(el); } catch (e) {}
+                });
+            }
+            shadow.querySelectorAll('img').forEach(img => {
+                img.classList.add('zoomable');
+                img.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (typeof openViewer === 'function') openViewer(img.src);
+                });
+            });
+        });
+    }
+
+    async function uploadAnnualImage(file) {
+        const form = new FormData();
+        form.append('image', file, file.name || 'paste.png');
+        const res = await fetch('/api/annual-activities/image', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data && data.error ? data.error : '上传失败');
+        }
+        if (!data || !data.url) throw new Error('上传成功但未返回图片地址');
+        return data.url;
+    }
+
+    function insertAtCursor(textarea, text) {
+        const start = textarea.selectionStart || 0;
+        const end = textarea.selectionEnd || 0;
+        const value = textarea.value || '';
+        textarea.value = value.slice(0, start) + text + value.slice(end);
+        const nextPos = start + text.length;
+        textarea.selectionStart = nextPos;
+        textarea.selectionEnd = nextPos;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function openSyncModal() {
+        document.getElementById('syncError').textContent = '';
+        document.getElementById('syncModal').classList.add('active');
+        const fromYear = document.getElementById('fromYear');
+        if (fromYear) fromYear.focus();
+    }
+
+    function closeSyncModal() {
+        document.getElementById('syncModal').classList.remove('active');
+    }
+
+    function confirmSync() {
+        const fromYear = document.getElementById('fromYear').value.trim();
+        if (!fromYear) {
+            document.getElementById('syncError').textContent = '源年份为必填项';
+            return false;
+        }
+        return confirm('确认同步？目标年份 1-12 月内容将被覆盖。');
+    }
+
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+        el.addEventListener('click', function(e) {
+            if (e.target === this) this.classList.remove('active');
+        });
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'));
+        }
+    });
+
+    document.addEventListener('paste', async function(e) {
+        if (!document.body.classList.contains('mode-edit')) return;
+        const active = document.activeElement;
+        if (!active || !(active instanceof HTMLTextAreaElement)) return;
+        if (!active.classList.contains('annual-textarea')) return;
+
+        const clipboard = e.clipboardData;
+        if (!clipboard || !clipboard.items) return;
+        const items = Array.from(clipboard.items);
+        const imageItem = items.find(it => it && typeof it.type === 'string' && it.type.startsWith('image/'));
+        if (!imageItem) return;
+
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (!file) return;
+
+        const prevCursor = document.body.style.cursor;
+        document.body.style.cursor = 'progress';
+        try {
+            const url = await uploadAnnualImage(file);
+            const md = `\n![](${url})\n`;
+            insertAtCursor(active, md);
+        } catch (err) {
+            alert(err && err.message ? err.message : '图片上传失败');
+        } finally {
+            document.body.style.cursor = prevCursor;
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.body.classList.add('mode-preview');
+        renderMarkdownBlocks();
+    });
+    </script>
+</body>
+</html>

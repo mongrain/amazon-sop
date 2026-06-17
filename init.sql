@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 年度活动（按年、按月维护活动与执行要点）
+CREATE TABLE IF NOT EXISTS annual_activities (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    year INT NOT NULL,
+    month TINYINT NOT NULL,
+    activity_title VARCHAR(500) DEFAULT NULL,
+    action_plan TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_year_month (year, month),
+    INDEX idx_year (year)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 产品版本快照表（用于记录某个时间点的产品所有SOP内容，允许后续修改）
 CREATE TABLE IF NOT EXISTS product_versions (
     id INT AUTO_INCREMENT PRIMARY KEY,
