@@ -146,7 +146,7 @@
     function renderMarkdownBlocks() {
         const mdIt = (globalThis.markdownit && typeof globalThis.markdownit === 'function')
             ? globalThis.markdownit({
-                html: false,
+                html: true,
                 linkify: true,
                 typographer: true,
                 breaks: true,
@@ -229,6 +229,61 @@
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
+    function normalizeTableCellText(text) {
+        return String(text || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\|/g, '\\|');
+    }
+
+    function matrixToMarkdownTable(matrix) {
+        if (!matrix.length) return '';
+        const colCount = Math.max(...matrix.map(row => row.length));
+        if (!colCount) return '';
+        const normalized = matrix.map(row => {
+            const cells = row.slice();
+            while (cells.length < colCount) cells.push('');
+            return cells.map(normalizeTableCellText);
+        });
+        const lines = normalized.map(row => '| ' + row.join(' | ') + ' |');
+        const separator = '| ' + Array(colCount).fill('---').join(' | ') + ' |';
+        lines.splice(1, 0, separator);
+        return lines.join('\n');
+    }
+
+    function tableElementToMarkdown(table) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        if (!rows.length) return '';
+        const matrix = rows.map(tr => Array.from(tr.querySelectorAll('th, td')).map(cell => cell.textContent || ''));
+        return matrixToMarkdownTable(matrix);
+    }
+
+    function htmlTablesToMarkdown(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const tables = Array.from(doc.body.querySelectorAll('table'));
+        if (!tables.length) return null;
+        const topTables = tables.filter(table => {
+            let parent = table.parentElement;
+            while (parent && parent !== doc.body) {
+                if (parent.tagName === 'TABLE') return false;
+                parent = parent.parentElement;
+            }
+            return true;
+        });
+        const parts = topTables.map(tableElementToMarkdown).filter(Boolean);
+        return parts.length ? parts.join('\n\n') : null;
+    }
+
+    function tsvToMarkdown(text) {
+        const lines = String(text || '').trim().split(/\r?\n/).filter(line => line.includes('\t'));
+        if (lines.length < 2) return null;
+        const matrix = lines.map(line => line.split('\t'));
+        const colCount = matrix[0].length;
+        if (colCount < 2) return null;
+        if (!matrix.every(row => row.length === colCount)) return null;
+        return matrixToMarkdownTable(matrix);
+    }
+
     function openSyncModal() {
         document.getElementById('syncError').textContent = '';
         document.getElementById('syncModal').classList.add('active');
@@ -268,31 +323,62 @@
         if (!active.classList.contains('annual-textarea')) return;
 
         const clipboard = e.clipboardData;
-        if (!clipboard || !clipboard.items) return;
-        const items = Array.from(clipboard.items);
+        if (!clipboard) return;
+
+        const items = clipboard.items ? Array.from(clipboard.items) : [];
         const imageItem = items.find(it => it && typeof it.type === 'string' && it.type.startsWith('image/'));
-        if (!imageItem) return;
+        if (imageItem) {
+            e.preventDefault();
+            const file = imageItem.getAsFile();
+            if (!file) return;
 
-        e.preventDefault();
-        const file = imageItem.getAsFile();
-        if (!file) return;
+            const prevCursor = document.body.style.cursor;
+            document.body.style.cursor = 'progress';
+            try {
+                const url = await uploadAnnualImage(file);
+                insertAtCursor(active, `\n![](${url})\n`);
+            } catch (err) {
+                alert(err && err.message ? err.message : '图片上传失败');
+            } finally {
+                document.body.style.cursor = prevCursor;
+            }
+            return;
+        }
 
-        const prevCursor = document.body.style.cursor;
-        document.body.style.cursor = 'progress';
-        try {
-            const url = await uploadAnnualImage(file);
-            const md = `\n![](${url})\n`;
-            insertAtCursor(active, md);
-        } catch (err) {
-            alert(err && err.message ? err.message : '图片上传失败');
-        } finally {
-            document.body.style.cursor = prevCursor;
+        const html = clipboard.getData('text/html');
+        if (html && /<table[\s>]/i.test(html)) {
+            const md = htmlTablesToMarkdown(html);
+            if (md) {
+                e.preventDefault();
+                insertAtCursor(active, '\n' + md + '\n');
+                return;
+            }
+        }
+
+        const plain = clipboard.getData('text/plain');
+        if (plain && plain.includes('\t')) {
+            const md = tsvToMarkdown(plain);
+            if (md) {
+                e.preventDefault();
+                insertAtCursor(active, '\n' + md + '\n');
+            }
         }
     });
 
     document.addEventListener('DOMContentLoaded', function() {
         document.body.classList.add('mode-preview');
         renderMarkdownBlocks();
+
+        const annualForm = document.getElementById('annualForm');
+        if (annualForm) {
+            annualForm.addEventListener('submit', function() {
+                if (annualForm.dataset.submitting === '1') return;
+                annualForm.dataset.submitting = '1';
+                document.querySelectorAll('button[form="annualForm"], #annualForm button[type="submit"]').forEach(function(btn) {
+                    btn.disabled = true;
+                });
+            });
+        }
     });
     </script>
 </body>

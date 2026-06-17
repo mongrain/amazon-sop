@@ -22,9 +22,10 @@ const { upload: uploadToRemote } = require('./service/upload');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware（年度活动保存含 12 个月 Markdown，默认 100kb 易超限导致连接被重置）
+const BODY_LIMIT = '5mb';
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('view cache', process.env.NODE_ENV === 'production');
@@ -2221,6 +2222,15 @@ setInterval(() => {
 }, 60 * 1000);
 
 schedulerTick().catch(e => console.error('Scheduler error:', e));
+
+app.use((err, req, res, next) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+        return res.status(413).send('提交内容过大，请精简后重试（单月「开展时需要做什么」最多 20000 字符）');
+    }
+    console.error('Unhandled error:', err);
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).send(err.message || 'Server error');
+});
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
