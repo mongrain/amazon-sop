@@ -7,13 +7,24 @@
             <a href="/dashboard" class="<%= typeof active !== 'undefined' && active === 'dashboard' ? 'active' : '' %>">产品看板</a>
             <a href="/sprints" class="<%= typeof active !== 'undefined' && active === 'sprints' ? 'active' : '' %>">冲刺项目</a>
             <a href="/metrics/manual" class="<%= typeof active !== 'undefined' && active === 'metrics' ? 'active' : '' %>">每日填报</a>
+            <a href="/daily-rants" class="<%= typeof active !== 'undefined' && active === 'daily_rants' ? 'active' : '' %>">每日吐槽</a>
             <a href="/tickets" class="<%= typeof active !== 'undefined' && active === 'tickets' ? 'active' : '' %>">工单看板</a>
             <a href="/annual-activities" class="<%= typeof active !== 'undefined' && active === 'annual_activities' ? 'active' : '' %>">年度活动</a>
             <a href="/users" class="<%= typeof active !== 'undefined' && active === 'users' ? 'active' : '' %>">人员管理</a>
             <a href="/competitors" class="<%= typeof active !== 'undefined' && active === 'competitors' ? 'active' : '' %>">竞品库</a>
+            <a href="/knowledge" class="<%= typeof active !== 'undefined' && active === 'knowledge' ? 'active' : '' %>">知识库</a>
             <a href="/sop" class="<%= typeof active !== 'undefined' && active === 'sop' ? 'active' : '' %>">SOP模板</a>
             <a href="/import" class="<%= typeof active !== 'undefined' && active === 'import' ? 'active' : '' %>">导入数据</a>
         </nav>
+        <% if (typeof currentUser !== 'undefined' && currentUser) { %>
+        <div class="sidebar-user">
+            <div class="sidebar-user-name"><%= currentUser.name %></div>
+            <div class="sidebar-user-role"><%= currentUser.role %></div>
+            <form method="post" action="/logout" style="margin-top:8px;">
+                <button type="submit" class="sidebar-logout-btn">退出登录</button>
+            </form>
+        </div>
+        <% } %>
     </aside>
 
     <!-- Fullscreen Image Viewer with scroll zoom -->

@@ -9,7 +9,7 @@
         <main class="main-content">
             <div class="page-header">
                 <h1>人员管理</h1>
-                <div class="page-desc">不做登录，仅用于负责人/协作人下拉选择</div>
+                <div class="page-desc">管理登录账号（姓名为登录账号），用于系统登录与吐槽作者识别</div>
             </div>
 
             <% if (error) { %>
@@ -25,8 +25,12 @@
                 <div class="module-body">
                     <form method="post" action="/users" style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
                         <div>
-                            <div style="font-size:13px; color:#606266; margin-bottom:6px;">姓名 *</div>
-                            <input class="search-input" name="name" required>
+                            <div style="font-size:13px; color:#606266; margin-bottom:6px;">姓名（登录账号）*</div>
+                            <input class="search-input" name="name" required autocomplete="off">
+                        </div>
+                        <div>
+                            <div style="font-size:13px; color:#606266; margin-bottom:6px;">密码 *</div>
+                            <input class="search-input" name="password" type="password" required minlength="4" autocomplete="new-password">
                         </div>
                         <div>
                             <div style="font-size:13px; color:#606266; margin-bottom:6px;">角色 *</div>
@@ -48,13 +52,14 @@
                             <th style="min-width:80px">ID</th>
                             <th style="min-width:200px">姓名</th>
                             <th style="min-width:160px">角色</th>
-                            <th style="min-width:200px">操作</th>
+                            <th style="min-width:280px">重置密码</th>
+                            <th style="min-width:120px">操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         <% if (!users || users.length === 0) { %>
                         <tr>
-                            <td colspan="4" style="text-align:center; padding:40px; color:#999;">暂无人员</td>
+                            <td colspan="5" style="text-align:center; padding:40px; color:#999;">暂无人员</td>
                         </tr>
                         <% } %>
                         <% (users || []).forEach(u => { %>
@@ -62,6 +67,12 @@
                             <td><%= u.id %></td>
                             <td><%= u.name %></td>
                             <td><%= u.role %></td>
+                            <td>
+                                <form method="post" action="/users/<%= u.id %>/password" style="display:flex; gap:8px; align-items:center;">
+                                    <input class="search-input" name="password" type="password" placeholder="新密码" minlength="4" required style="width:140px;">
+                                    <button class="btn-secondary" type="submit" style="padding:6px 12px; font-size:12px;">重置</button>
+                                </form>
+                            </td>
                             <td>
                                 <form method="post" action="/users/<%= u.id %>/delete" onsubmit="return confirm('确认删除该人员？')" style="display:inline;">
                                     <button class="btn-danger" type="submit">删除</button>
@@ -76,4 +87,3 @@
     </div>
 </body>
 </html>
-

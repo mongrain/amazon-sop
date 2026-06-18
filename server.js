@@ -18,6 +18,19 @@ const {
 const { importExcel, EXCEL_PATH } = require('./importer');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
+const {
+    hashPassword,
+    verifyPassword,
+    createSession,
+    destroySession,
+    setSessionCookie,
+    clearSessionCookie,
+    requireLogin,
+    attachCurrentUser,
+    requirePasswordChanged,
+    updateSessionUser,
+    ensureDefaultAdmin
+} = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -30,6 +43,167 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('view cache', process.env.NODE_ENV === 'production');
 app.set('views', path.join(__dirname, 'views'));
+
+app.use(attachCurrentUser);
+
+// ========== 登录 ==========
+
+app.get('/login', async (req, res) => {
+    if (req.currentUser) {
+        if (req.currentUser.mustChangePassword) {
+            return res.redirect('/account/change-password');
+        }
+        const nextUrl = String(req.query.next || '/dashboard').trim();
+        const safeNext = nextUrl.startsWith('/') && !nextUrl.startsWith('//') ? nextUrl : '/dashboard';
+        return res.redirect(safeNext);
+    }
+
+    let defaultAdminHint = null;
+    try {
+        const adminName = String(process.env.ADMIN_NAME || 'admin').trim() || 'admin';
+        const admin = await queryOne(
+            'SELECT must_change_password FROM users WHERE name = ? AND password_hash IS NOT NULL',
+            [adminName]
+        );
+        if (admin && Number(admin.must_change_password) === 1) {
+            defaultAdminHint = {
+                name: adminName,
+                password: String(process.env.ADMIN_PASSWORD || 'admin123')
+            };
+        }
+    } catch (e) {}
+
+    res.render('login', {
+        error: null,
+        next: String(req.query.next || '/dashboard'),
+        defaultAdminHint,
+        title: '登录'
+    });
+});
+
+app.post('/login', async (req, res) => {
+    try {
+        const name = String(req.body.name || '').trim();
+        const password = String(req.body.password || '');
+        const nextUrl = String(req.body.next || '/dashboard').trim();
+        const safeNext = nextUrl.startsWith('/') && !nextUrl.startsWith('//') ? nextUrl : '/dashboard';
+
+        if (!name || !password) {
+            return res.status(400).render('login', {
+                error: '请输入账号和密码',
+                next: safeNext,
+                defaultAdminHint: null,
+                title: '登录'
+            });
+        }
+
+        const user = await queryOne(
+            'SELECT id, name, role, password_hash, must_change_password FROM users WHERE name = ?',
+            [name]
+        );
+        if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
+            return res.status(401).render('login', {
+                error: '账号或密码错误',
+                next: safeNext,
+                defaultAdminHint: null,
+                title: '登录'
+            });
+        }
+
+        const token = createSession(user);
+        setSessionCookie(res, token);
+        if (user.must_change_password) {
+            return res.redirect('/account/change-password');
+        }
+        res.redirect(safeNext);
+    } catch (e) {
+        console.error('Login error:', e);
+        res.status(500).render('login', {
+            error: '登录失败，请稍后重试',
+            next: '/dashboard',
+            title: '登录'
+        });
+    }
+});
+
+app.post('/logout', (req, res) => {
+    destroySession(req);
+    clearSessionCookie(res);
+    res.redirect('/login');
+});
+
+app.use(requireLogin);
+app.use(requirePasswordChanged);
+
+app.get('/account/change-password', (req, res) => {
+    res.render('change_password', {
+        error: null,
+        forced: !!req.currentUser.mustChangePassword,
+        title: '修改密码'
+    });
+});
+
+app.post('/account/change-password', async (req, res) => {
+    try {
+        const currentPassword = String(req.body.current_password || '');
+        const newPassword = String(req.body.new_password || '');
+        const confirmPassword = String(req.body.confirm_password || '');
+
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            return res.status(400).render('change_password', {
+                error: '请填写所有密码字段',
+                forced: !!req.currentUser.mustChangePassword,
+                title: '修改密码'
+            });
+        }
+        if (newPassword.length < 4) {
+            return res.status(400).render('change_password', {
+                error: '新密码至少 4 位',
+                forced: !!req.currentUser.mustChangePassword,
+                title: '修改密码'
+            });
+        }
+        if (newPassword !== confirmPassword) {
+            return res.status(400).render('change_password', {
+                error: '两次输入的新密码不一致',
+                forced: !!req.currentUser.mustChangePassword,
+                title: '修改密码'
+            });
+        }
+
+        const user = await queryOne('SELECT password_hash FROM users WHERE id = ?', [req.currentUser.id]);
+        if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+            return res.status(400).render('change_password', {
+                error: '当前密码不正确',
+                forced: !!req.currentUser.mustChangePassword,
+                title: '修改密码'
+            });
+        }
+        if (verifyPassword(newPassword, user.password_hash)) {
+            return res.status(400).render('change_password', {
+                error: '新密码不能与当前密码相同',
+                forced: !!req.currentUser.mustChangePassword,
+                title: '修改密码'
+            });
+        }
+
+        await runSql(
+            'UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = NOW() WHERE id = ?',
+            [hashPassword(newPassword), req.currentUser.id]
+        );
+        updateSessionUser(req, { mustChangePassword: false });
+        req.currentUser.mustChangePassword = false;
+        res.locals.currentUser.mustChangePassword = false;
+        res.redirect('/dashboard?password_changed=1');
+    } catch (e) {
+        console.error('Change password error:', e);
+        res.status(500).render('change_password', {
+            error: '修改失败，请稍后重试',
+            forced: !!req.currentUser.mustChangePassword,
+            title: '修改密码'
+        });
+    }
+});
 
 // Multer config for image uploads
 const storage = multer.diskStorage({
@@ -73,14 +247,22 @@ const fileUpload = multer({
     }
 });
 
-let dbReady = false;
-initDb().then(() => {
-    dbReady = true;
-    console.log('Database initialized');
-}).catch(err => {
-    console.error('Database init failed:', err);
-    console.error('Check your MySQL connection settings in database.js or .env');
+const knowledgeFileUpload = multer({
+    storage,
+    limits: { fileSize: 15 * 1024 * 1024 }
 });
+
+let dbReady = false;
+initDb()
+    .then(() => ensureDefaultAdmin({ queryOne, runSql }))
+    .then(() => {
+        dbReady = true;
+        console.log('Database initialized');
+    })
+    .catch(err => {
+        console.error('Database init failed:', err);
+        console.error('Check your MySQL connection settings in database.js or .env');
+    });
 
 // ========== Routes ==========
 
@@ -551,6 +733,352 @@ app.post('/annual-activities/save', async (req, res) => {
         res.redirect(`/annual-activities?year=${encodeURIComponent(String(year))}&saved=1`);
     } catch (e) {
         console.error('Annual activities save error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+// ========== 知识库 ==========
+
+app.post('/api/knowledge/image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file || !req.file.filename) {
+            return res.status(400).json({ error: '未找到图片文件' });
+        }
+        res.json({ url: '/uploads/' + req.file.filename });
+    } catch (e) {
+        console.error('Knowledge image upload error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/knowledge/file', knowledgeFileUpload.single('file'), async (req, res) => {
+    try {
+        if (!req.file || !req.file.filename) {
+            return res.status(400).json({ error: '未找到文件' });
+        }
+        const storedName = req.file.filename;
+        const originalName = req.file.originalname || storedName;
+        const downloadUrl = '/api/knowledge/download/' + encodeURIComponent(storedName)
+            + '?name=' + encodeURIComponent(originalName);
+        res.json({
+            filename: originalName,
+            storedName,
+            downloadUrl
+        });
+    } catch (e) {
+        console.error('Knowledge file upload error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/knowledge/download/:filename', (req, res) => {
+    try {
+        const storedName = path.basename(req.params.filename);
+        const filePath = path.join(__dirname, 'public', 'uploads', storedName);
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+            return res.status(404).send('文件不存在');
+        }
+        const displayName = path.basename(String(req.query.name || storedName));
+        res.download(filePath, displayName);
+    } catch (e) {
+        console.error('Knowledge file download error:', e);
+        res.status(500).send('下载失败');
+    }
+});
+
+app.get('/knowledge', async (req, res) => {
+    try {
+        const keyword = String(req.query.keyword || '').trim();
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = 20;
+        const offset = (page - 1) * pageSize;
+
+        let whereSql = '';
+        const params = [];
+        if (keyword) {
+            whereSql = 'WHERE title LIKE ? OR content LIKE ?';
+            const like = `%${keyword}%`;
+            params.push(like, like);
+        }
+
+        const totalRow = await queryOne(`SELECT COUNT(*) AS cnt FROM knowledge_docs ${whereSql}`, params);
+        const total = totalRow ? Number(totalRow.cnt) : 0;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+        const docs = await queryAll(
+            `SELECT id, title, LEFT(content, 120) AS excerpt, updated_at FROM knowledge_docs ${whereSql} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
+            [...params, pageSize, offset]
+        );
+
+        res.render('knowledge', {
+            docs,
+            keyword,
+            page,
+            pageSize,
+            total,
+            totalPages,
+            title: '知识库'
+        });
+    } catch (e) {
+        console.error('Knowledge list error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.get('/knowledge/new', async (req, res) => {
+    res.render('knowledge_doc', {
+        doc: null,
+        isNew: true,
+        saved: false,
+        title: '新建文档'
+    });
+});
+
+app.get('/knowledge/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!Number.isFinite(id)) return res.status(400).send('无效的文档 ID');
+
+        const doc = await queryOne('SELECT * FROM knowledge_docs WHERE id = ?', [id]);
+        if (!doc) return res.status(404).send('文档不存在');
+
+        const saved = String(req.query.saved || '') === '1';
+
+        res.render('knowledge_doc', {
+            doc,
+            isNew: false,
+            saved,
+            title: doc.title || '文档'
+        });
+    } catch (e) {
+        console.error('Knowledge doc page error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/knowledge/save', async (req, res) => {
+    try {
+        const idRaw = parseInt(req.body.id);
+        const id = Number.isFinite(idRaw) ? idRaw : null;
+        const title = String(req.body.title || '').trim();
+        const content = String(req.body.content || '');
+
+        if (!title) return res.status(400).send('标题不能为空');
+        if (title.length > 500) return res.status(400).send('标题过长（最多 500 字符）');
+        if (content.length > 500000) return res.status(400).send('正文过长（最多 500000 字符）');
+
+        if (id) {
+            const existing = await queryOne('SELECT id FROM knowledge_docs WHERE id = ?', [id]);
+            if (!existing) return res.status(404).send('文档不存在');
+            await runSql(
+                'UPDATE knowledge_docs SET title = ?, content = ?, updated_at = NOW() WHERE id = ?',
+                [title, content, id]
+            );
+            return res.redirect(`/knowledge/${id}?saved=1`);
+        }
+
+        const result = await runSql(
+            'INSERT INTO knowledge_docs (title, content) VALUES (?, ?)',
+            [title, content]
+        );
+        const newId = result && result.insertId ? result.insertId : null;
+        if (!newId) return res.status(500).send('保存失败');
+        res.redirect(`/knowledge/${newId}?saved=1`);
+    } catch (e) {
+        console.error('Knowledge save error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/knowledge/:id/delete', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!Number.isFinite(id)) return res.status(400).send('无效的文档 ID');
+
+        const existing = await queryOne('SELECT id FROM knowledge_docs WHERE id = ?', [id]);
+        if (!existing) return res.status(404).send('文档不存在');
+
+        await runSql('DELETE FROM knowledge_docs WHERE id = ?', [id]);
+        res.redirect('/knowledge');
+    } catch (e) {
+        console.error('Knowledge delete error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+// ========== 每日吐槽 ==========
+
+app.post('/api/daily-rants/image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file || !req.file.path) {
+            return res.status(400).json({ error: '未找到图片文件' });
+        }
+        const localPath = req.file.path;
+        const result = await uploadToRemote(localPath, { uploadPrefix: 'daily-rants' });
+        try {
+            fs.unlinkSync(localPath);
+        } catch (e) {}
+        res.json({ url: result.public_url, key: result.key });
+    } catch (e) {
+        console.error('Daily rant image upload error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/daily-rants', async (req, res) => {
+    try {
+        const keyword = String(req.query.keyword || '').trim();
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = 20;
+        const offset = (page - 1) * pageSize;
+        const isManager = req.currentUser.role === 'MANAGER';
+
+        const conditions = [];
+        const params = [];
+        if (!isManager) {
+            conditions.push('dr.user_id = ?');
+            params.push(req.currentUser.id);
+        }
+        if (keyword) {
+            conditions.push('(dr.content LIKE ? OR u.name LIKE ?)');
+            const like = `%${keyword}%`;
+            params.push(like, like);
+        }
+        const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        const totalRow = await queryOne(
+            `SELECT COUNT(*) AS cnt FROM daily_rants dr JOIN users u ON dr.user_id = u.id ${whereSql}`,
+            params
+        );
+        const total = totalRow ? Number(totalRow.cnt) : 0;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+        const rants = await queryAll(
+            `SELECT dr.id, dr.rant_date, dr.content, dr.created_at, dr.updated_at, dr.user_id,
+                    u.name AS author_name
+             FROM daily_rants dr
+             JOIN users u ON dr.user_id = u.id
+             ${whereSql}
+             ORDER BY dr.rant_date DESC, dr.id DESC
+             LIMIT ? OFFSET ?`,
+            [...params, pageSize, offset]
+        );
+
+        res.render('daily_rants', {
+            rants,
+            keyword,
+            page,
+            pageSize,
+            total,
+            totalPages,
+            isManager,
+            currentUser: req.currentUser,
+            title: '每日吐槽'
+        });
+    } catch (e) {
+        console.error('Daily rants list error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.get('/daily-rants/new', async (req, res) => {
+    res.render('daily_rant_edit', {
+        rant: null,
+        isNew: true,
+        saved: false,
+        canEdit: true,
+        currentUser: req.currentUser,
+        title: '写吐槽'
+    });
+});
+
+app.get('/daily-rants/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!Number.isFinite(id)) return res.status(400).send('无效的 ID');
+
+        const rant = await queryOne(
+            `SELECT dr.*, u.name AS author_name
+             FROM daily_rants dr
+             JOIN users u ON dr.user_id = u.id
+             WHERE dr.id = ?`,
+            [id]
+        );
+        if (!rant) return res.status(404).send('吐槽不存在');
+
+        const isManager = req.currentUser.role === 'MANAGER';
+        if (!isManager && rant.user_id !== req.currentUser.id) {
+            return res.status(403).send('无权查看他人的吐槽');
+        }
+
+        const saved = String(req.query.saved || '') === '1';
+        const canEdit = rant.user_id === req.currentUser.id || isManager;
+
+        res.render('daily_rant_edit', {
+            rant,
+            isNew: false,
+            saved,
+            canEdit,
+            currentUser: req.currentUser,
+            title: '每日吐槽'
+        });
+    } catch (e) {
+        console.error('Daily rant page error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/daily-rants/save', async (req, res) => {
+    try {
+        const idRaw = parseInt(req.body.id);
+        const id = Number.isFinite(idRaw) ? idRaw : null;
+        const content = String(req.body.content || '');
+
+        if (!content.trim()) return res.status(400).send('内容不能为空');
+        if (content.length > 50000) return res.status(400).send('内容过长（最多 50000 字符）');
+
+        if (id) {
+            const existing = await queryOne('SELECT id, user_id FROM daily_rants WHERE id = ?', [id]);
+            if (!existing) return res.status(404).send('吐槽不存在');
+            if (existing.user_id !== req.currentUser.id && req.currentUser.role !== 'MANAGER') {
+                return res.status(403).send('无权编辑他人的吐槽');
+            }
+            await runSql(
+                'UPDATE daily_rants SET content = ?, updated_at = NOW() WHERE id = ?',
+                [content, id]
+            );
+            return res.redirect(`/daily-rants/${id}?saved=1`);
+        }
+
+        const rantDate = toDateString(new Date());
+        const result = await runSql(
+            'INSERT INTO daily_rants (user_id, content, rant_date) VALUES (?, ?, ?)',
+            [req.currentUser.id, content, rantDate]
+        );
+        const newId = result && result.insertId ? result.insertId : null;
+        if (!newId) return res.status(500).send('保存失败');
+        res.redirect(`/daily-rants/${newId}?saved=1`);
+    } catch (e) {
+        console.error('Daily rant save error:', e);
+        res.status(500).send('Server error: ' + e.message);
+    }
+});
+
+app.post('/daily-rants/:id/delete', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!Number.isFinite(id)) return res.status(400).send('无效的 ID');
+
+        const existing = await queryOne('SELECT id, user_id FROM daily_rants WHERE id = ?', [id]);
+        if (!existing) return res.status(404).send('吐槽不存在');
+        if (existing.user_id !== req.currentUser.id && req.currentUser.role !== 'MANAGER') {
+            return res.status(403).send('无权删除他人的吐槽');
+        }
+
+        await runSql('DELETE FROM daily_rants WHERE id = ?', [id]);
+        res.redirect('/daily-rants');
+    } catch (e) {
+        console.error('Daily rant delete error:', e);
         res.status(500).send('Server error: ' + e.message);
     }
 });
@@ -1482,19 +2010,44 @@ app.post('/users', async (req, res) => {
     try {
         const name = String(req.body.name || '').trim();
         const role = String(req.body.role || '').trim();
+        const password = String(req.body.password || '');
         if (!name) {
-            const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
             return res.status(400).render('users', { users, error: '姓名不能为空', title: '人员管理' });
         }
         if (!['OPS', 'DESIGN', 'MANAGER'].includes(role)) {
-            const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
             return res.status(400).render('users', { users, error: '角色不合法', title: '人员管理' });
         }
-        await runSql('INSERT INTO users (name, role) VALUES (?, ?)', [name, role]);
+        if (!password || password.length < 4) {
+            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
+            return res.status(400).render('users', { users, error: '密码至少 4 位', title: '人员管理' });
+        }
+        const password_hash = hashPassword(password);
+        await runSql('INSERT INTO users (name, password_hash, role) VALUES (?, ?, ?)', [name, password_hash, role]);
         cachedDefaultDesignUserId = null;
         res.redirect('/users');
     } catch (e) {
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
+        const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
+        res.status(400).render('users', { users, error: e.message, title: '人员管理' });
+    }
+});
+
+app.post('/users/:id/password', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!Number.isFinite(id)) return res.redirect('/users');
+        const password = String(req.body.password || '');
+        if (!password || password.length < 4) {
+            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
+            return res.status(400).render('users', { users, error: '新密码至少 4 位', title: '人员管理' });
+        }
+        const existing = await queryOne('SELECT id FROM users WHERE id = ?', [id]);
+        if (!existing) return res.redirect('/users');
+        await runSql('UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?', [hashPassword(password), id]);
+        res.redirect('/users');
+    } catch (e) {
+        const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
         res.status(400).render('users', { users, error: e.message, title: '人员管理' });
     }
 });

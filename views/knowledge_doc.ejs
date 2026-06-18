@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body class="<%= isNew ? 'mode-edit' : 'mode-preview' %>">
+    <div class="app">
+        <%- include('sidebar', { active: 'knowledge' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <a href="/knowledge" class="back-link">&larr; 返回知识库</a>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:0;">
+                        <div class="knowledge-preview">
+                            <h1 style="margin-bottom:4px;"><%= doc ? doc.title : '新建文档' %></h1>
+                        </div>
+                        <div class="knowledge-edit" style="margin-top:8px;">
+                            <input
+                                id="docTitle"
+                                name="title"
+                                form="knowledgeForm"
+                                class="search-input"
+                                style="width:100%; max-width:640px; font-size:18px; font-weight:600;"
+                                type="text"
+                                maxlength="500"
+                                placeholder="文档标题"
+                                value="<%= doc ? doc.title : '' %>"
+                                required
+                            >
+                        </div>
+                        <div class="page-desc" style="margin-top:6px;">支持 Markdown；可直接粘贴 Word 表格、Excel、图片、文件（生成下载链接）</div>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <% if (!isNew) { %>
+                            <button class="btn-secondary knowledge-preview" type="button" onclick="enterEditMode()">编辑</button>
+                            <button class="btn-secondary knowledge-edit" type="button" onclick="cancelEditMode()">取消</button>
+                        <% } %>
+                        <% if (!isNew && doc) { %>
+                            <form method="post" action="/knowledge/<%= doc.id %>/delete" onsubmit="return confirm('确认删除该文档？此操作不可恢复。')" style="display:inline;">
+                                <button class="btn-danger" type="submit">删除</button>
+                            </form>
+                        <% } %>
+                    </div>
+                </div>
+                <% if (saved) { %>
+                    <div style="margin-top:12px; padding:10px 12px; background:#f0f9eb; border:1px solid #e1f3d8; border-radius:8px; color:var(--success); font-size:13px;">
+                        已保存
+                    </div>
+                <% } %>
+            </div>
+
+            <form id="knowledgeForm" method="post" action="/knowledge/save">
+                <% if (doc) { %>
+                    <input type="hidden" name="id" value="<%= doc.id %>">
+                <% } %>
+
+                <div class="module-card knowledge-doc-card">
+                    <div class="module-body" style="padding:20px;">
+                        <div class="knowledge-preview">
+                            <div class="knowledge-markdown annual-markdown markdown-body"></div>
+                            <pre class="knowledge-md-source" style="display:none;"><%= doc && doc.content ? doc.content : '' %></pre>
+                        </div>
+                        <textarea
+                            id="docContent"
+                            name="content"
+                            class="knowledge-edit annual-textarea"
+                            style="min-height:480px; width:100%;"
+                            rows="24"
+                            placeholder="在此粘贴或编写文档内容…&#10;&#10;支持：&#10;- 直接粘贴 Word / 记事本文本&#10;- 粘贴 Excel / 表格（自动转为 Markdown 表格）&#10;- 粘贴截图（自动上传）&#10;- 粘贴文件（自动上传并生成下载链接）&#10;- Markdown 语法"
+                        ><%= doc && doc.content ? doc.content : '' %></textarea>
+                    </div>
+                </div>
+
+                <div class="knowledge-edit" style="margin-top:18px; display:flex; justify-content:flex-end;">
+                    <button class="btn-primary" type="submit">保存</button>
+                </div>
+            </form>
+        </main>
+    </div>
+
+    <script>
+    function enterEditMode() {
+        document.body.classList.remove('mode-preview');
+        document.body.classList.add('mode-edit');
+        const title = document.getElementById('docTitle');
+        if (title) title.focus();
+    }
+
+    function cancelEditMode() {
+        location.reload();
+    }
+
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderMarkdownPreview() {
+        const mdIt = (globalThis.markdownit && typeof globalThis.markdownit === 'function')
+            ? globalThis.markdownit({
+                html: true,
+                linkify: true,
+                typographer: true,
+                breaks: true,
+                highlight: function(str, lang) {
+                    if (!globalThis.hljs) return '';
+                    try {
+                        if (lang && globalThis.hljs.getLanguage(lang)) {
+                            return globalThis.hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+                        }
+                        return globalThis.hljs.highlightAuto(str).value;
+                    } catch (e) {
+                        return '';
+                    }
+                }
+            })
+            : null;
+
+        if (mdIt && globalThis.markdownitTaskLists) {
+            mdIt.use(globalThis.markdownitTaskLists, { enabled: true, label: true, labelAfter: true });
+        }
+
+        const block = document.querySelector('.knowledge-markdown');
+        const source = document.querySelector('.knowledge-md-source');
+        if (!block) return;
+
+        const md = source ? source.textContent : '';
+        const html = mdIt
+            ? mdIt.render(md || '')
+            : `<pre style="white-space:pre-wrap;">${escapeHtml(md)}</pre>`;
+        const safe = globalThis.DOMPurify ? globalThis.DOMPurify.sanitize(html) : html;
+        const shadow = block.shadowRoot || block.attachShadow({ mode: 'open' });
+        const contentHtml = safe || '<span style="color:#909399;">（暂无内容）</span>';
+        shadow.innerHTML = `
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css">
+            <style>
+                :host { display: block; }
+                .markdown-body { padding: 16px; font-size: 14px; line-height: 1.75; }
+                .markdown-body img { width: 33.333%; max-width: 33.333%; height: auto;  }
+            </style>
+            <div class="markdown-body">${contentHtml}</div>
+        `;
+        if (globalThis.hljs) {
+            shadow.querySelectorAll('pre code').forEach(el => {
+                try { globalThis.hljs.highlightElement(el); } catch (e) {}
+            });
+        }
+        shadow.querySelectorAll('img').forEach(img => {
+            img.classList.add('zoomable');
+            img.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (typeof openViewer === 'function') openViewer(img.src);
+            });
+        });
+        shadow.querySelectorAll('a[href*="/api/knowledge/download/"]').forEach(link => {
+            link.classList.add('knowledge-download-link');
+        });
+    }
+
+    async function uploadImage(file) {
+        const form = new FormData();
+        form.append('image', file, file.name || 'paste.png');
+        const res = await fetch('/api/knowledge/image', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data && data.error ? data.error : '上传失败');
+        }
+        if (!data || !data.url) throw new Error('上传成功但未返回图片地址');
+        return data.url;
+    }
+
+    async function uploadFile(file) {
+        const form = new FormData();
+        form.append('file', file, file.name || 'file');
+        const res = await fetch('/api/knowledge/file', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data && data.error ? data.error : '上传失败');
+        }
+        if (!data || !data.downloadUrl) throw new Error('上传成功但未返回下载地址');
+        return { downloadUrl: data.downloadUrl, filename: data.filename || file.name || '文件' };
+    }
+
+    function escapeMarkdownLinkText(text) {
+        return String(text || '').replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+    }
+
+    function insertAtCursor(textarea, text) {
+        const start = textarea.selectionStart || 0;
+        const end = textarea.selectionEnd || 0;
+        const value = textarea.value || '';
+        textarea.value = value.slice(0, start) + text + value.slice(end);
+        const nextPos = start + text.length;
+        textarea.selectionStart = nextPos;
+        textarea.selectionEnd = nextPos;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function normalizeTableCellText(text) {
+        return String(text || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\|/g, '\\|');
+    }
+
+    function matrixToMarkdownTable(matrix) {
+        if (!matrix.length) return '';
+        const colCount = Math.max(...matrix.map(row => row.length));
+        if (!colCount) return '';
+        const normalized = matrix.map(row => {
+            const cells = row.slice();
+            while (cells.length < colCount) cells.push('');
+            return cells.map(normalizeTableCellText);
+        });
+        const lines = normalized.map(row => '| ' + row.join(' | ') + ' |');
+        const separator = '| ' + Array(colCount).fill('---').join(' | ') + ' |';
+        lines.splice(1, 0, separator);
+        return lines.join('\n');
+    }
+
+    function tableElementToMarkdown(table) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        if (!rows.length) return '';
+        const matrix = rows.map(tr => Array.from(tr.querySelectorAll('th, td')).map(cell => cell.textContent || ''));
+        return matrixToMarkdownTable(matrix);
+    }
+
+    function htmlTablesToMarkdown(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const tables = Array.from(doc.body.querySelectorAll('table'));
+        if (!tables.length) return null;
+        const topTables = tables.filter(table => {
+            let parent = table.parentElement;
+            while (parent && parent !== doc.body) {
+                if (parent.tagName === 'TABLE') return false;
+                parent = parent.parentElement;
+            }
+            return true;
+        });
+        const parts = topTables.map(tableElementToMarkdown).filter(Boolean);
+        return parts.length ? parts.join('\n\n') : null;
+    }
+
+    function tsvToMarkdown(text) {
+        const lines = String(text || '').trim().split(/\r?\n/).filter(line => line.includes('\t'));
+        if (lines.length < 2) return null;
+        const matrix = lines.map(line => line.split('\t'));
+        const colCount = matrix[0].length;
+        if (colCount < 2) return null;
+        if (!matrix.every(row => row.length === colCount)) return null;
+        return matrixToMarkdownTable(matrix);
+    }
+
+    document.addEventListener('paste', async function(e) {
+        if (!document.body.classList.contains('mode-edit')) return;
+        const active = document.activeElement;
+        if (!active || active.id !== 'docContent') return;
+
+        const clipboard = e.clipboardData;
+        if (!clipboard) return;
+
+        const items = clipboard.items ? Array.from(clipboard.items) : [];
+        const imageItem = items.find(it => it && typeof it.type === 'string' && it.type.startsWith('image/'));
+        if (imageItem) {
+            e.preventDefault();
+            const file = imageItem.getAsFile();
+            if (!file) return;
+
+            const prevCursor = document.body.style.cursor;
+            document.body.style.cursor = 'progress';
+            try {
+                const url = await uploadImage(file);
+                insertAtCursor(active, `\n![](${url})\n`);
+            } catch (err) {
+                alert(err && err.message ? err.message : '图片上传失败');
+            } finally {
+                document.body.style.cursor = prevCursor;
+            }
+            return;
+        }
+
+        const fileItem = items.find(it => it && it.kind === 'file' && typeof it.type === 'string' && !it.type.startsWith('image/'));
+        if (fileItem) {
+            e.preventDefault();
+            const file = fileItem.getAsFile();
+            if (!file) return;
+
+            const prevCursor = document.body.style.cursor;
+            document.body.style.cursor = 'progress';
+            try {
+                const { downloadUrl, filename } = await uploadFile(file);
+                const label = escapeMarkdownLinkText('下载 ' + filename);
+                insertAtCursor(active, `\n[${label}](${downloadUrl})\n`);
+            } catch (err) {
+                alert(err && err.message ? err.message : '文件上传失败');
+            } finally {
+                document.body.style.cursor = prevCursor;
+            }
+            return;
+        }
+
+        const html = clipboard.getData('text/html');
+        if (html && /<table[\s>]/i.test(html)) {
+            const md = htmlTablesToMarkdown(html);
+            if (md) {
+                e.preventDefault();
+                insertAtCursor(active, '\n' + md + '\n');
+                return;
+            }
+        }
+
+        const plain = clipboard.getData('text/plain');
+        if (plain && plain.includes('\t')) {
+            const md = tsvToMarkdown(plain);
+            if (md) {
+                e.preventDefault();
+                insertAtCursor(active, '\n' + md + '\n');
+            }
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        renderMarkdownPreview();
+
+        const form = document.getElementById('knowledgeForm');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const title = document.getElementById('docTitle');
+                if (title && !title.value.trim()) {
+                    e.preventDefault();
+                    alert('请填写文档标题');
+                    title.focus();
+                    return;
+                }
+                if (form.dataset.submitting === '1') {
+                    e.preventDefault();
+                    return;
+                }
+                form.dataset.submitting = '1';
+                form.querySelectorAll('button[type="submit"]').forEach(function(btn) {
+                    btn.disabled = true;
+                });
+            });
+        }
+
+        <% if (isNew) { %>
+        const title = document.getElementById('docTitle');
+        if (title) title.focus();
+        <% } %>
+    });
+    </script>
+</body>
+</html>

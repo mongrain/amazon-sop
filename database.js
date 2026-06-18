@@ -182,11 +182,41 @@ async function initDb() {
         await p.query(`CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
+            password_hash VARCHAR(200) DEFAULT NULL,
+            must_change_password TINYINT DEFAULT 0 COMMENT '1: 首次登录须改密',
             role ENUM('OPS','DESIGN','MANAGER') NOT NULL DEFAULT 'OPS',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uk_user_name (name),
             INDEX idx_role (role)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query('ALTER TABLE users ADD COLUMN password_hash VARCHAR(200) DEFAULT NULL AFTER name');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE users ADD COLUMN must_change_password TINYINT DEFAULT 0 COMMENT \'1: 首次登录须改密\' AFTER password_hash');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS daily_rants (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            content LONGTEXT,
+            rant_date DATE NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_rant_date (rant_date),
+            INDEX idx_user_date (user_id, rant_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e) {
         // Silently skip
@@ -297,6 +327,19 @@ async function initDb() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_asin_date (asin, record_date),
             INDEX idx_type (insight_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS knowledge_docs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(500) NOT NULL,
+            content LONGTEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_updated (updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e) {
         // Silently skip

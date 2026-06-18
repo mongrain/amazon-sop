@@ -122,11 +122,26 @@ CREATE TABLE IF NOT EXISTS competitor_monitor_records (
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(200) DEFAULT NULL,
+    must_change_password TINYINT DEFAULT 0 COMMENT '1: 首次登录须改密',
     role ENUM('OPS','DESIGN','MANAGER') NOT NULL DEFAULT 'OPS',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_user_name (name),
     INDEX idx_role (role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 每日吐槽
+CREATE TABLE IF NOT EXISTS daily_rants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    content LONGTEXT,
+    rant_date DATE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_rant_date (rant_date),
+    INDEX idx_user_date (user_id, rant_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS sprint_projects (
@@ -236,6 +251,16 @@ CREATE TABLE IF NOT EXISTS issue_tickets (
     INDEX idx_status_deadline (status, sla_deadline),
     INDEX idx_asin_created (asin, created_at),
     INDEX idx_sprint (sprint_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 知识库文档
+CREATE TABLE IF NOT EXISTS knowledge_docs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    content LONGTEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================

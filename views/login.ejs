@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+    <style>
+        body { background: var(--bg); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            padding: 36px 32px;
+        }
+        .login-title { font-size: 22px; font-weight: 600; margin-bottom: 6px; color: var(--text-primary); }
+        .login-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
+        .login-field { margin-bottom: 16px; }
+        .login-label { font-size: 13px; color: #606266; margin-bottom: 6px; display: block; }
+        .login-input { width: 100%; box-sizing: border-box; }
+        .login-error {
+            background: #fef0f0;
+            border: 1px solid #fde2e2;
+            color: #f56c6c;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+        .login-hint {
+            background: #ecf5ff;
+            border: 1px solid #d9ecff;
+            color: #409eff;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-title">Amazon SOP</div>
+        <div class="login-desc">运营管理系统 · 请登录</div>
+
+        <% if (defaultAdminHint) { %>
+            <div class="login-hint">
+                首次部署默认账号：<strong><%= defaultAdminHint.name %></strong> /
+                <strong><%= defaultAdminHint.password %></strong><br>
+                登录后须立即修改密码
+            </div>
+        <% } %>
+
+        <% if (error) { %>
+            <div class="login-error"><%= error %></div>
+        <% } %>
+
+        <form method="post" action="/login">
+            <input type="hidden" name="next" value="<%= next || '/dashboard' %>">
+            <div class="login-field">
+                <label class="login-label" for="name">账号</label>
+                <input class="search-input login-input" id="name" name="name" type="text" required autocomplete="username" placeholder="姓名"
+                    <% if (defaultAdminHint) { %>value="<%= defaultAdminHint.name %>"<% } %>>
+            </div>
+            <div class="login-field">
+                <label class="login-label" for="password">密码</label>
+                <input class="search-input login-input" id="password" name="password" type="password" required autocomplete="current-password" placeholder="密码">
+            </div>
+            <button type="submit" class="btn-primary" style="width:100%; margin-top:8px;">登录</button>
+        </form>
+    </div>
+</body>
+</html>

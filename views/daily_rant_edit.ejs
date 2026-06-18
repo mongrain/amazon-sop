@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <%- include('head') %>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body class="<%= isNew ? 'mode-edit' : 'mode-preview' %>">
+    <div class="app">
+        <%- include('sidebar', { active: 'daily_rants' }) %>
+        <main class="main-content">
+            <div class="page-header">
+                <a href="/daily-rants" class="back-link">&larr; 返回列表</a>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:0;">
+                        <h1 style="margin-bottom:4px;"><%= isNew ? '写吐槽' : '每日吐槽' %></h1>
+                        <div class="page-desc" style="margin-top:6px;">
+                            <% if (isNew) { %>
+                                作者：<strong><%= currentUser.name %></strong> · 日期：<%= new Date().toLocaleDateString('zh-CN') %>
+                            <% } else if (rant) { %>
+                                作者：<strong><%= rant.author_name %></strong>
+                                · 日期：<%= String(rant.rant_date).slice(0, 10) %>
+                                <% if (currentUser && rant.user_id === currentUser.id) { %>
+                                    <span style="color:var(--primary);">（我写的）</span>
+                                <% } %>
+                            <% } %>
+                            · 支持 Markdown，粘贴图片自动上传至外部图床
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <% if (!isNew && canEdit) { %>
+                            <button class="btn-secondary knowledge-preview" type="button" onclick="enterEditMode()">编辑</button>
+                            <button class="btn-secondary knowledge-edit" type="button" onclick="cancelEditMode()">取消</button>
+                        <% } %>
+                        <% if (!isNew && rant && canEdit) { %>
+                            <form method="post" action="/daily-rants/<%= rant.id %>/delete" onsubmit="return confirm('确认删除这条吐槽？')" style="display:inline;">
+                                <button class="btn-danger" type="submit">删除</button>
+                            </form>
+                        <% } %>
+                    </div>
+                </div>
+                <% if (saved) { %>
+                    <div style="margin-top:12px; padding:10px 12px; background:#f0f9eb; border:1px solid #e1f3d8; border-radius:8px; color:var(--success); font-size:13px;">
+                        已保存
+                    </div>
+                <% } %>
+            </div>
+
+            <% if (isNew || canEdit) { %>
+            <form id="rantForm" method="post" action="/daily-rants/save">
+                <% if (rant) { %>
+                    <input type="hidden" name="id" value="<%= rant.id %>">
+                <% } %>
+                <div class="module-card knowledge-doc-card">
+                    <div class="module-body" style="padding:20px;">
+                        <div class="knowledge-preview">
+                            <div class="knowledge-markdown annual-markdown markdown-body"></div>
+                            <pre class="knowledge-md-source" style="display:none;"><%= rant && rant.content ? rant.content : '' %></pre>
+                        </div>
+                        <textarea
+                            id="rantContent"
+                            name="content"
+                            class="knowledge-edit annual-textarea"
+                            style="min-height:420px; width:100%;"
+                            rows="20"
+                            placeholder="今天想吐槽什么…&#10;&#10;支持 Markdown 语法，可直接粘贴截图（自动上传外部图床）"
+                        ><%= rant && rant.content ? rant.content : '' %></textarea>
+                    </div>
+                </div>
+                <div class="knowledge-edit" style="margin-top:18px; display:flex; justify-content:flex-end;">
+                    <button class="btn-primary" type="submit">保存</button>
+                </div>
+            </form>
+            <% } else { %>
+            <div class="module-card knowledge-doc-card">
+                <div class="module-body" style="padding:20px;">
+                    <div class="knowledge-markdown annual-markdown markdown-body"></div>
+                    <pre class="knowledge-md-source" style="display:none;"><%= rant && rant.content ? rant.content : '' %></pre>
+                </div>
+            </div>
+            <% } %>
+        </main>
+    </div>
+
+    <script>
+    function enterEditMode() {
+        document.body.classList.remove('mode-preview');
+        document.body.classList.add('mode-edit');
+        const content = document.getElementById('rantContent');
+        if (content) content.focus();
+    }
+
+    function cancelEditMode() {
+        location.reload();
+    }
+
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderMarkdownPreview() {
+        const mdIt = (globalThis.markdownit && typeof globalThis.markdownit === 'function')
+            ? globalThis.markdownit({
+                html: true,
+                linkify: true,
+                typographer: true,
+                breaks: true,
+                highlight: function(str, lang) {
+                    if (!globalThis.hljs) return '';
+                    try {
+                        if (lang && globalThis.hljs.getLanguage(lang)) {
+                            return globalThis.hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+                        }
+                        return globalThis.hljs.highlightAuto(str).value;
+                    } catch (e) {
+                        return '';
+                    }
+                }
+            })
+            : null;
+
+        if (mdIt && globalThis.markdownitTaskLists) {
+            mdIt.use(globalThis.markdownitTaskLists, { enabled: true, label: true, labelAfter: true });
+        }
+
+        document.querySelectorAll('.knowledge-markdown').forEach(function(block) {
+            const source = block.parentElement.querySelector('.knowledge-md-source');
+            const md = source ? source.textContent : '';
+            const html = mdIt
+                ? mdIt.render(md || '')
+                : `<pre style="white-space:pre-wrap;">${escapeHtml(md)}</pre>`;
+            const safe = globalThis.DOMPurify ? globalThis.DOMPurify.sanitize(html) : html;
+            const shadow = block.shadowRoot || block.attachShadow({ mode: 'open' });
+            const contentHtml = safe || '<span style="color:#909399;">（暂无内容）</span>';
+            shadow.innerHTML = `
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.min.css">
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css">
+                <style>
+                    :host { display: block; }
+                    .markdown-body { padding: 16px; font-size: 14px; line-height: 1.75; }
+                    .markdown-body img { max-width: 100%; height: auto; cursor: zoom-in; }
+                </style>
+                <div class="markdown-body">${contentHtml}</div>
+            `;
+            if (globalThis.hljs) {
+                shadow.querySelectorAll('pre code').forEach(el => {
+                    try { globalThis.hljs.highlightElement(el); } catch (e) {}
+                });
+            }
+            shadow.querySelectorAll('img').forEach(img => {
+                img.classList.add('zoomable');
+                img.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (typeof openViewer === 'function') openViewer(img.src);
+                });
+            });
+        });
+    }
+
+    async function uploadRantImage(file) {
+        const form = new FormData();
+        form.append('image', file, file.name || 'paste.png');
+        const res = await fetch('/api/daily-rants/image', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data && data.error ? data.error : '上传失败');
+        }
+        if (!data || !data.url) throw new Error('上传成功但未返回图片地址');
+        return data.url;
+    }
+
+    function insertAtCursor(textarea, text) {
+        const start = textarea.selectionStart || 0;
+        const end = textarea.selectionEnd || 0;
+        const value = textarea.value || '';
+        textarea.value = value.slice(0, start) + text + value.slice(end);
+        const nextPos = start + text.length;
+        textarea.selectionStart = nextPos;
+        textarea.selectionEnd = nextPos;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    document.addEventListener('paste', async function(e) {
+        if (!document.body.classList.contains('mode-edit')) return;
+        const active = document.activeElement;
+        if (!active || active.id !== 'rantContent') return;
+
+        const clipboard = e.clipboardData;
+        if (!clipboard) return;
+
+        const items = clipboard.items ? Array.from(clipboard.items) : [];
+        const imageItem = items.find(it => it && typeof it.type === 'string' && it.type.startsWith('image/'));
+        if (imageItem) {
+            e.preventDefault();
+            const file = imageItem.getAsFile();
+            if (!file) return;
+
+            const prevCursor = document.body.style.cursor;
+            document.body.style.cursor = 'progress';
+            try {
+                const url = await uploadRantImage(file);
+                insertAtCursor(active, `\n![](${url})\n`);
+            } catch (err) {
+                alert(err && err.message ? err.message : '图片上传失败');
+            } finally {
+                document.body.style.cursor = prevCursor;
+            }
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        renderMarkdownPreview();
+
+        const form = document.getElementById('rantForm');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const content = document.getElementById('rantContent');
+                if (content && !content.value.trim()) {
+                    e.preventDefault();
+                    alert('请填写吐槽内容');
+                    content.focus();
+                    return;
+                }
+                if (form.dataset.submitting === '1') {
+                    e.preventDefault();
+                    return;
+                }
+                form.dataset.submitting = '1';
+                form.querySelectorAll('button[type="submit"]').forEach(function(btn) {
+                    btn.disabled = true;
+                });
+            });
+        }
+
+        <% if (isNew) { %>
+        const content = document.getElementById('rantContent');
+        if (content) content.focus();
+        <% } %>
+    });
+    </script>
+</body>
+</html>

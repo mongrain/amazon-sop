@@ -768,6 +768,37 @@ body {
     display: none !important;
 }
 
+.knowledge-preview:not(button) {
+    display: block;
+    /* padding: 16px 24px; */
+}
+.knowledge-edit { display: none; }
+.mode-edit .knowledge-preview { display: none !important; }
+.mode-edit .knowledge-edit { display: block !important; }
+.mode-preview .knowledge-edit { display: none !important; }
+.mode-preview .knowledge-preview { display: block !important; }
+
+.knowledge-markdown {
+    min-height: 120px;
+}
+
+.mode-preview .knowledge-doc-card {
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.mode-preview .knowledge-doc-card .module-body {
+    padding: 0 !important;
+}
+
+.mode-preview .knowledge-markdown {
+    min-height: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
 .annual-title-view {
     padding: 8px 12px;
     border: 1px solid transparent;
@@ -810,4 +841,38 @@ body {
     .annual-label {
         padding-top: 0;
     }
+}
+
+.sidebar-user {
+    margin-top: auto;
+    padding: 16px 20px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-user-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.sidebar-user-role {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 2px;
+}
+
+.sidebar-logout-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    width: 100%;
+}
+
+.sidebar-logout-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
 }
