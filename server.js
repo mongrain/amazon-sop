@@ -18,6 +18,7 @@ const {
 const { importExcel, EXCEL_PATH } = require('./importer');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
+const { compareStorefrontImages } = require('./gpt');
 const {
     hashPassword,
     verifyPassword,
@@ -32,98 +33,32 @@ const {
     ensureDefaultAdmin
 } = require('./auth');
 
+const { registerPublicPageApi, registerProtectedPageApi } = require('./routes/page-api');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const DIST_DIR = path.join(__dirname, 'dist');
+const INDEX_HTML = fs.existsSync(path.join(DIST_DIR, 'index.html'))
+    ? path.join(DIST_DIR, 'index.html')
+    : path.join(PUBLIC_DIR, 'index.html');
 
 // Middleware（年度活动保存含 12 个月 Markdown，默认 100kb 易超限导致连接被重置）
 const BODY_LIMIT = '5mb';
 app.use(express.json({ limit: BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
-app.use(express.static(path.join(__dirname, 'public')));
-app.set('view engine', 'ejs');
-app.set('view cache', process.env.NODE_ENV === 'production');
-app.set('views', path.join(__dirname, 'views'));
+app.use(express.static(PUBLIC_DIR));
+if (fs.existsSync(DIST_DIR)) {
+    app.use(express.static(DIST_DIR));
+}
 
 app.use(attachCurrentUser);
 
-// ========== 登录 ==========
-
-app.get('/login', async (req, res) => {
-    if (req.currentUser) {
-        if (req.currentUser.mustChangePassword) {
-            return res.redirect('/account/change-password');
-        }
-        const nextUrl = String(req.query.next || '/dashboard').trim();
-        const safeNext = nextUrl.startsWith('/') && !nextUrl.startsWith('//') ? nextUrl : '/dashboard';
-        return res.redirect(safeNext);
-    }
-
-    let defaultAdminHint = null;
-    try {
-        const adminName = String(process.env.ADMIN_NAME || 'admin').trim() || 'admin';
-        const admin = await queryOne(
-            'SELECT must_change_password FROM users WHERE name = ? AND password_hash IS NOT NULL',
-            [adminName]
-        );
-        if (admin && Number(admin.must_change_password) === 1) {
-            defaultAdminHint = {
-                name: adminName,
-                password: String(process.env.ADMIN_PASSWORD || 'admin123')
-            };
-        }
-    } catch (e) {}
-
-    res.render('login', {
-        error: null,
-        next: String(req.query.next || '/dashboard'),
-        defaultAdminHint,
-        title: '登录'
-    });
-});
-
-app.post('/login', async (req, res) => {
-    try {
-        const name = String(req.body.name || '').trim();
-        const password = String(req.body.password || '');
-        const nextUrl = String(req.body.next || '/dashboard').trim();
-        const safeNext = nextUrl.startsWith('/') && !nextUrl.startsWith('//') ? nextUrl : '/dashboard';
-
-        if (!name || !password) {
-            return res.status(400).render('login', {
-                error: '请输入账号和密码',
-                next: safeNext,
-                defaultAdminHint: null,
-                title: '登录'
-            });
-        }
-
-        const user = await queryOne(
-            'SELECT id, name, role, password_hash, must_change_password FROM users WHERE name = ?',
-            [name]
-        );
-        if (!user || !user.password_hash || !verifyPassword(password, user.password_hash)) {
-            return res.status(401).render('login', {
-                error: '账号或密码错误',
-                next: safeNext,
-                defaultAdminHint: null,
-                title: '登录'
-            });
-        }
-
-        const token = createSession(user);
-        setSessionCookie(res, token);
-        if (user.must_change_password) {
-            return res.redirect('/account/change-password');
-        }
-        res.redirect(safeNext);
-    } catch (e) {
-        console.error('Login error:', e);
-        res.status(500).render('login', {
-            error: '登录失败，请稍后重试',
-            next: '/dashboard',
-            title: '登录'
-        });
-    }
+registerPublicPageApi(app, {
+    queryOne,
+    verifyPassword,
+    createSession,
+    setSessionCookie
 });
 
 app.post('/logout', (req, res) => {
@@ -135,81 +70,48 @@ app.post('/logout', (req, res) => {
 app.use(requireLogin);
 app.use(requirePasswordChanged);
 
-app.get('/account/change-password', (req, res) => {
-    res.render('change_password', {
-        error: null,
-        forced: !!req.currentUser.mustChangePassword,
-        title: '修改密码'
-    });
-});
+function getPageApiCtx() {
+    return {
+        queryAll,
+        queryOne,
+        runSql,
+        getModulesWithItems,
+        getProductModuleProgressMap,
+        buildTableRefMap,
+        importExcel,
+        EXCEL_PATH,
+        hashPassword,
+        verifyPassword,
+        destroySession,
+        clearSessionCookie,
+        updateSessionUser,
+        ensureWeeklyReviewsForActiveSprints,
+        toDateString,
+        getMondayStart,
+        parseYmd,
+        addDays,
+        normalizeMonitorImageUrl,
+        resetDesignUserCache: () => { cachedDefaultDesignUserId = null; }
+    };
+}
 
-app.post('/account/change-password', async (req, res) => {
+registerProtectedPageApi(app, getPageApiCtx());
+
+/** multer/busboy 将 multipart 文件名按 latin1 解析，中文需转回 UTF-8 */
+function decodeUploadFilename(name) {
+    if (!name || typeof name !== 'string') return name || '';
     try {
-        const currentPassword = String(req.body.current_password || '');
-        const newPassword = String(req.body.new_password || '');
-        const confirmPassword = String(req.body.confirm_password || '');
-
-        if (!currentPassword || !newPassword || !confirmPassword) {
-            return res.status(400).render('change_password', {
-                error: '请填写所有密码字段',
-                forced: !!req.currentUser.mustChangePassword,
-                title: '修改密码'
-            });
-        }
-        if (newPassword.length < 4) {
-            return res.status(400).render('change_password', {
-                error: '新密码至少 4 位',
-                forced: !!req.currentUser.mustChangePassword,
-                title: '修改密码'
-            });
-        }
-        if (newPassword !== confirmPassword) {
-            return res.status(400).render('change_password', {
-                error: '两次输入的新密码不一致',
-                forced: !!req.currentUser.mustChangePassword,
-                title: '修改密码'
-            });
-        }
-
-        const user = await queryOne('SELECT password_hash FROM users WHERE id = ?', [req.currentUser.id]);
-        if (!user || !verifyPassword(currentPassword, user.password_hash)) {
-            return res.status(400).render('change_password', {
-                error: '当前密码不正确',
-                forced: !!req.currentUser.mustChangePassword,
-                title: '修改密码'
-            });
-        }
-        if (verifyPassword(newPassword, user.password_hash)) {
-            return res.status(400).render('change_password', {
-                error: '新密码不能与当前密码相同',
-                forced: !!req.currentUser.mustChangePassword,
-                title: '修改密码'
-            });
-        }
-
-        await runSql(
-            'UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = NOW() WHERE id = ?',
-            [hashPassword(newPassword), req.currentUser.id]
-        );
-        updateSessionUser(req, { mustChangePassword: false });
-        req.currentUser.mustChangePassword = false;
-        res.locals.currentUser.mustChangePassword = false;
-        res.redirect('/dashboard?password_changed=1');
+        return Buffer.from(name, 'latin1').toString('utf8');
     } catch (e) {
-        console.error('Change password error:', e);
-        res.status(500).render('change_password', {
-            error: '修改失败，请稍后重试',
-            forced: !!req.currentUser.mustChangePassword,
-            title: '修改密码'
-        });
+        return name;
     }
-});
+}
 
 // Multer config for image uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, path.join(__dirname, 'public', 'uploads')),
     filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
+        const ext = path.extname(decodeUploadFilename(file.originalname));
         cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
     }
 });
@@ -462,171 +364,6 @@ async function runPostIngestionRules(asins, recordDateStr) {
     }
 }
 
-app.get('/dashboard', async (req, res) => {
-    try {
-        const { search = '', category = '', status = '' } = req.query;
-        const page = Math.max(1, parseInt(req.query.page) || 1);
-        const pageSize = 15;
-        const offset = (page - 1) * pageSize;
-
-        const modules = await queryAll('SELECT * FROM sop_modules ORDER BY sort_order');
-
-        const whereParts = ['1=1'];
-        const filterParams = [];
-        if (search) {
-            whereParts.push('(asin LIKE ? OR name LIKE ?)');
-            filterParams.push(`%${search}%`, `%${search}%`);
-        }
-        if (category) {
-            whereParts.push('category = ?');
-            filterParams.push(category);
-        }
-        if (status) {
-            whereParts.push('status = ?');
-            filterParams.push(status);
-        }
-        const whereSql = whereParts.join(' AND ');
-
-        const totalRow = await queryOne(`SELECT COUNT(*) AS cnt FROM products WHERE ${whereSql}`, filterParams);
-        const total = totalRow ? totalRow.cnt : 0;
-        const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-        // Aggregate stats across the full filtered set, not just the current page
-        const statRows = await queryAll(
-            `SELECT status, COUNT(*) AS cnt FROM products WHERE ${whereSql} GROUP BY status`,
-            filterParams
-        );
-        const stats = { total, '待处理': 0, '进行中': 0, '已完成': 0, '跳过': 0 };
-        for (const r of statRows) {
-            if (r.status && Object.prototype.hasOwnProperty.call(stats, r.status)) {
-                stats[r.status] = r.cnt;
-            }
-        }
-
-        let sql = `SELECT id, asin, name, category, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY created_at ASC LIMIT ? OFFSET ?`;
-        let products = await queryAll(sql, [...filterParams, pageSize, offset]);
-
-        const progressMap = await getProductModuleProgressMap(products.map(product => product.id));
-
-        // Enrich with module progress using the batched result to avoid N+1 queries.
-        products = products.map(product => {
-            const moduleProgress = progressMap[product.id] || {};
-            const fullProgress = {};
-            for (const module of modules) {
-                fullProgress[module.id] = moduleProgress[module.id] || {
-                    completed: 0,
-                    total: 0,
-                    percentage: 0
-                };
-            }
-            return {
-                ...product,
-                module_progress: fullProgress
-            };
-        });
-
-        const categories = await queryAll('SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category');
-
-        const isHtmx = req.headers['hx-request'] === 'true';
-
-        res.render('dashboard', {
-            products, modules,
-            categories: categories.map(r => r.category),
-            current_search: search,
-            current_category: category,
-            current_status: status,
-            page, pageSize, total, totalPages, stats,
-            is_htmx: isHtmx,
-            title: '产品看板'
-        });
-    } catch (e) {
-        console.error('Dashboard error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.get('/product/:asin', async (req, res) => {
-    try {
-        const { asin } = req.params;
-        const product = await queryOne('SELECT * FROM products WHERE asin = ?', [asin]);
-        if (!product) return res.status(404).send('Product not found');
-
-        const allModules = await getModulesWithItems();
-        // Filter out 基础信息 (sort_order=1)
-        const modules = allModules.filter(m => m.sort_order > 1);
-
-        // Enrich items with table_ref so views can identify fields by data source
-        const refMap = buildTableRefMap();
-        for (const mod of modules) {
-            const itemRefs = refMap[mod.name] || {};
-            mod.sop_items = mod.sop_items.map(item => ({
-                ...item,
-                table_ref: itemRefs[item.name] || null
-            }));
-        }
-
-        // Fetch all records for this product
-        const records = await queryAll('SELECT * FROM product_sop_records WHERE product_id = ?', [product.id]);
-        const recordMap = {};
-        for (const r of records) {
-            recordMap[r.sop_item_id] = r;
-        }
-
-        // Calculate module progress (including 基础信息)
-        const progressMap = await getProductModuleProgressMap([product.id]);
-        const moduleProgress = {};
-        for (const m of allModules) {
-            moduleProgress[m.id] = (progressMap[product.id] && progressMap[product.id][m.id]) || {
-                completed: 0,
-                total: 0,
-                percentage: 0
-            };
-        }
-
-        res.render('product', {
-            product, modules, recordMap, moduleProgress, title: product.name || product.asin
-        });
-    } catch (e) {
-        console.error('Product detail error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.get('/sop', async (req, res) => {
-    try {
-        const dbModules = await getModulesWithItems();
-        const refMap = buildTableRefMap();
-
-        // Enrich database items with table_ref
-        const modules = dbModules
-            .filter(m => m.sort_order > 1)
-            .map(mod => {
-            const itemRefs = refMap[mod.name] || {};
-            return {
-                ...mod,
-                sop_items: mod.sop_items.map(item => ({
-                    ...item,
-                    table_ref: itemRefs[item.name] || null
-                }))
-            };
-        });
-
-        res.render('sop_template', { modules, title: 'SOP模板' });
-    } catch (e) {
-        console.error('SOP error:', e);
-        res.status(500).send('Server error');
-    }
-});
-
-app.get('/import', async (req, res) => {
-    res.render('import_page', { result: null, import_path: EXCEL_PATH, title: '导入数据' });
-});
-
-app.post('/import', async (req, res) => {
-    const result = await importExcel();
-    res.render('import_page', { result, import_path: EXCEL_PATH, title: '导入数据' });
-});
-
 app.post('/api/annual-activities/image', upload.single('image'), async (req, res) => {
     try {
         if (!req.file || !req.file.path) {
@@ -640,100 +377,6 @@ app.post('/api/annual-activities/image', upload.single('image'), async (req, res
         res.json({ url: result.public_url, key: result.key });
     } catch (e) {
         res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/annual-activities', async (req, res) => {
-    try {
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const year = Math.min(2100, Math.max(2000, parseInt(req.query.year) || currentYear));
-        const saved = String(req.query.saved || '') === '1';
-        const syncedFromYearRaw = parseInt(req.query.synced_from);
-        const syncedFromYear = Number.isFinite(syncedFromYearRaw) ? syncedFromYearRaw : null;
-
-        const rows = await queryAll('SELECT year, month, activity_title, action_plan FROM annual_activities WHERE year = ? ORDER BY month ASC', [year]);
-        const activitiesMap = {};
-        for (const row of rows) {
-            activitiesMap[row.month] = row;
-        }
-
-        res.render('annual_activities', {
-            year,
-            saved,
-            syncedFromYear,
-            activitiesMap,
-            title: '年度活动'
-        });
-    } catch (e) {
-        console.error('Annual activities page error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/annual-activities/sync', async (req, res) => {
-    try {
-        const fromYearRaw = parseInt(req.body.from_year);
-        const toYearRaw = parseInt(req.body.to_year);
-        const from_year = Math.min(2100, Math.max(2000, Number.isFinite(fromYearRaw) ? fromYearRaw : new Date().getFullYear() - 1));
-        const to_year = Math.min(2100, Math.max(2000, Number.isFinite(toYearRaw) ? toYearRaw : new Date().getFullYear()));
-
-        if (from_year === to_year) {
-            return res.status(400).send('源年份与目标年份不能相同');
-        }
-
-        await runSql('DELETE FROM annual_activities WHERE year = ?', [to_year]);
-        await runSql(
-            `INSERT INTO annual_activities (year, month, activity_title, action_plan, created_at, updated_at)
-             SELECT ?, month, activity_title, action_plan, NOW(), NOW()
-             FROM annual_activities WHERE year = ?`,
-            [to_year, from_year]
-        );
-
-        res.redirect(`/annual-activities?year=${encodeURIComponent(String(to_year))}&saved=1&synced_from=${encodeURIComponent(String(from_year))}`);
-    } catch (e) {
-        console.error('Annual activities sync error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/annual-activities/save', async (req, res) => {
-    try {
-        const year = Math.min(2100, Math.max(2000, parseInt(req.body.year) || new Date().getFullYear()));
-
-        for (let month = 1; month <= 12; month++) {
-            const titleKey = `title_${month}`;
-            const planKey = `plan_${month}`;
-            const activity_title = String(req.body[titleKey] || '').trim() || null;
-            const action_plan = String(req.body[planKey] || '').trim() || null;
-
-            if (activity_title && activity_title.length > 500) {
-                return res.status(400).send(`第 ${month} 月主要活动过长（最多 500 字符）`);
-            }
-            if (action_plan && action_plan.length > 20000) {
-                return res.status(400).send(`第 ${month} 月“开展时需要做什么”过长（最多 20000 字符）`);
-            }
-
-            if (!activity_title && !action_plan) {
-                await runSql('DELETE FROM annual_activities WHERE year = ? AND month = ?', [year, month]);
-                continue;
-            }
-
-            await runSql(
-                `INSERT INTO annual_activities (year, month, activity_title, action_plan)
-                 VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                    activity_title = VALUES(activity_title),
-                    action_plan = VALUES(action_plan),
-                    updated_at = NOW()`,
-                [year, month, activity_title, action_plan]
-            );
-        }
-
-        res.redirect(`/annual-activities?year=${encodeURIComponent(String(year))}&saved=1`);
-    } catch (e) {
-        console.error('Annual activities save error:', e);
-        res.status(500).send('Server error: ' + e.message);
     }
 });
 
@@ -757,7 +400,7 @@ app.post('/api/knowledge/file', knowledgeFileUpload.single('file'), async (req, 
             return res.status(400).json({ error: '未找到文件' });
         }
         const storedName = req.file.filename;
-        const originalName = req.file.originalname || storedName;
+        const originalName = decodeUploadFilename(req.file.originalname) || storedName;
         const downloadUrl = '/api/knowledge/download/' + encodeURIComponent(storedName)
             + '?name=' + encodeURIComponent(originalName);
         res.json({
@@ -786,123 +429,49 @@ app.get('/api/knowledge/download/:filename', (req, res) => {
     }
 });
 
-app.get('/knowledge', async (req, res) => {
+app.get('/api/knowledge/draft', async (req, res) => {
     try {
-        const keyword = String(req.query.keyword || '').trim();
-        const page = Math.max(1, parseInt(req.query.page) || 1);
-        const pageSize = 20;
-        const offset = (page - 1) * pageSize;
-
-        let whereSql = '';
-        const params = [];
-        if (keyword) {
-            whereSql = 'WHERE title LIKE ? OR content LIKE ?';
-            const like = `%${keyword}%`;
-            params.push(like, like);
-        }
-
-        const totalRow = await queryOne(`SELECT COUNT(*) AS cnt FROM knowledge_docs ${whereSql}`, params);
-        const total = totalRow ? Number(totalRow.cnt) : 0;
-        const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-        const docs = await queryAll(
-            `SELECT id, title, LEFT(content, 120) AS excerpt, updated_at FROM knowledge_docs ${whereSql} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`,
-            [...params, pageSize, offset]
+        const draft = await queryOne(
+            'SELECT doc_id, title, content, updated_at FROM knowledge_drafts WHERE user_id = ?',
+            [req.currentUser.id]
         );
-
-        res.render('knowledge', {
-            docs,
-            keyword,
-            page,
-            pageSize,
-            total,
-            totalPages,
-            title: '知识库'
-        });
+        res.json({ draft: draft || null });
     } catch (e) {
-        console.error('Knowledge list error:', e);
-        res.status(500).send('Server error: ' + e.message);
+        console.error('Knowledge draft get error:', e);
+        res.status(500).json({ error: e.message });
     }
 });
 
-app.get('/knowledge/new', async (req, res) => {
-    res.render('knowledge_doc', {
-        doc: null,
-        isNew: true,
-        saved: false,
-        title: '新建文档'
-    });
-});
-
-app.get('/knowledge/:id', async (req, res) => {
+app.post('/api/knowledge/draft', async (req, res) => {
     try {
-        const id = parseInt(req.params.id);
-        if (!Number.isFinite(id)) return res.status(400).send('无效的文档 ID');
-
-        const doc = await queryOne('SELECT * FROM knowledge_docs WHERE id = ?', [id]);
-        if (!doc) return res.status(404).send('文档不存在');
-
-        const saved = String(req.query.saved || '') === '1';
-
-        res.render('knowledge_doc', {
-            doc,
-            isNew: false,
-            saved,
-            title: doc.title || '文档'
-        });
-    } catch (e) {
-        console.error('Knowledge doc page error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/knowledge/save', async (req, res) => {
-    try {
-        const idRaw = parseInt(req.body.id);
-        const id = Number.isFinite(idRaw) ? idRaw : null;
-        const title = String(req.body.title || '').trim();
+        const title = String(req.body.title || '');
         const content = String(req.body.content || '');
+        const docIdRaw = parseInt(req.body.doc_id);
+        const doc_id = Number.isFinite(docIdRaw) ? docIdRaw : null;
 
-        if (!title) return res.status(400).send('标题不能为空');
-        if (title.length > 500) return res.status(400).send('标题过长（最多 500 字符）');
-        if (content.length > 500000) return res.status(400).send('正文过长（最多 500000 字符）');
+        if (title.length > 500) return res.status(400).json({ error: '标题过长（最多 500 字符）' });
+        if (content.length > 500000) return res.status(400).json({ error: '正文过长（最多 500000 字符）' });
 
-        if (id) {
-            const existing = await queryOne('SELECT id FROM knowledge_docs WHERE id = ?', [id]);
-            if (!existing) return res.status(404).send('文档不存在');
-            await runSql(
-                'UPDATE knowledge_docs SET title = ?, content = ?, updated_at = NOW() WHERE id = ?',
-                [title, content, id]
-            );
-            return res.redirect(`/knowledge/${id}?saved=1`);
-        }
-
-        const result = await runSql(
-            'INSERT INTO knowledge_docs (title, content) VALUES (?, ?)',
-            [title, content]
+        await runSql(
+            `INSERT INTO knowledge_drafts (user_id, doc_id, title, content)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE doc_id = VALUES(doc_id), title = VALUES(title), content = VALUES(content), updated_at = NOW()`,
+            [req.currentUser.id, doc_id, title, content]
         );
-        const newId = result && result.insertId ? result.insertId : null;
-        if (!newId) return res.status(500).send('保存失败');
-        res.redirect(`/knowledge/${newId}?saved=1`);
+        res.json({ status: 'ok' });
     } catch (e) {
-        console.error('Knowledge save error:', e);
-        res.status(500).send('Server error: ' + e.message);
+        console.error('Knowledge draft save error:', e);
+        res.status(500).json({ error: e.message });
     }
 });
 
-app.post('/knowledge/:id/delete', async (req, res) => {
+app.delete('/api/knowledge/draft', async (req, res) => {
     try {
-        const id = parseInt(req.params.id);
-        if (!Number.isFinite(id)) return res.status(400).send('无效的文档 ID');
-
-        const existing = await queryOne('SELECT id FROM knowledge_docs WHERE id = ?', [id]);
-        if (!existing) return res.status(404).send('文档不存在');
-
-        await runSql('DELETE FROM knowledge_docs WHERE id = ?', [id]);
-        res.redirect('/knowledge');
+        await runSql('DELETE FROM knowledge_drafts WHERE user_id = ?', [req.currentUser.id]);
+        res.json({ status: 'ok' });
     } catch (e) {
-        console.error('Knowledge delete error:', e);
-        res.status(500).send('Server error: ' + e.message);
+        console.error('Knowledge draft delete error:', e);
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -925,249 +494,11 @@ app.post('/api/daily-rants/image', upload.single('image'), async (req, res) => {
     }
 });
 
-app.get('/daily-rants', async (req, res) => {
-    try {
-        const keyword = String(req.query.keyword || '').trim();
-        const page = Math.max(1, parseInt(req.query.page) || 1);
-        const pageSize = 20;
-        const offset = (page - 1) * pageSize;
-        const isManager = req.currentUser.role === 'MANAGER';
 
-        const conditions = [];
-        const params = [];
-        if (!isManager) {
-            conditions.push('dr.user_id = ?');
-            params.push(req.currentUser.id);
-        }
-        if (keyword) {
-            conditions.push('(dr.content LIKE ? OR u.name LIKE ?)');
-            const like = `%${keyword}%`;
-            params.push(like, like);
-        }
-        const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-        const totalRow = await queryOne(
-            `SELECT COUNT(*) AS cnt FROM daily_rants dr JOIN users u ON dr.user_id = u.id ${whereSql}`,
-            params
-        );
-        const total = totalRow ? Number(totalRow.cnt) : 0;
-        const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-        const rants = await queryAll(
-            `SELECT dr.id, dr.rant_date, dr.content, dr.created_at, dr.updated_at, dr.user_id,
-                    u.name AS author_name
-             FROM daily_rants dr
-             JOIN users u ON dr.user_id = u.id
-             ${whereSql}
-             ORDER BY dr.rant_date DESC, dr.id DESC
-             LIMIT ? OFFSET ?`,
-            [...params, pageSize, offset]
-        );
 
-        res.render('daily_rants', {
-            rants,
-            keyword,
-            page,
-            pageSize,
-            total,
-            totalPages,
-            isManager,
-            currentUser: req.currentUser,
-            title: '每日吐槽'
-        });
-    } catch (e) {
-        console.error('Daily rants list error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
-app.get('/daily-rants/new', async (req, res) => {
-    res.render('daily_rant_edit', {
-        rant: null,
-        isNew: true,
-        saved: false,
-        canEdit: true,
-        currentUser: req.currentUser,
-        title: '写吐槽'
-    });
-});
-
-app.get('/daily-rants/:id', async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        if (!Number.isFinite(id)) return res.status(400).send('无效的 ID');
-
-        const rant = await queryOne(
-            `SELECT dr.*, u.name AS author_name
-             FROM daily_rants dr
-             JOIN users u ON dr.user_id = u.id
-             WHERE dr.id = ?`,
-            [id]
-        );
-        if (!rant) return res.status(404).send('吐槽不存在');
-
-        const isManager = req.currentUser.role === 'MANAGER';
-        if (!isManager && rant.user_id !== req.currentUser.id) {
-            return res.status(403).send('无权查看他人的吐槽');
-        }
-
-        const saved = String(req.query.saved || '') === '1';
-        const canEdit = rant.user_id === req.currentUser.id || isManager;
-
-        res.render('daily_rant_edit', {
-            rant,
-            isNew: false,
-            saved,
-            canEdit,
-            currentUser: req.currentUser,
-            title: '每日吐槽'
-        });
-    } catch (e) {
-        console.error('Daily rant page error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/daily-rants/save', async (req, res) => {
-    try {
-        const idRaw = parseInt(req.body.id);
-        const id = Number.isFinite(idRaw) ? idRaw : null;
-        const content = String(req.body.content || '');
-
-        if (!content.trim()) return res.status(400).send('内容不能为空');
-        if (content.length > 50000) return res.status(400).send('内容过长（最多 50000 字符）');
-
-        if (id) {
-            const existing = await queryOne('SELECT id, user_id FROM daily_rants WHERE id = ?', [id]);
-            if (!existing) return res.status(404).send('吐槽不存在');
-            if (existing.user_id !== req.currentUser.id && req.currentUser.role !== 'MANAGER') {
-                return res.status(403).send('无权编辑他人的吐槽');
-            }
-            await runSql(
-                'UPDATE daily_rants SET content = ?, updated_at = NOW() WHERE id = ?',
-                [content, id]
-            );
-            return res.redirect(`/daily-rants/${id}?saved=1`);
-        }
-
-        const rantDate = toDateString(new Date());
-        const result = await runSql(
-            'INSERT INTO daily_rants (user_id, content, rant_date) VALUES (?, ?, ?)',
-            [req.currentUser.id, content, rantDate]
-        );
-        const newId = result && result.insertId ? result.insertId : null;
-        if (!newId) return res.status(500).send('保存失败');
-        res.redirect(`/daily-rants/${newId}?saved=1`);
-    } catch (e) {
-        console.error('Daily rant save error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/daily-rants/:id/delete', async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        if (!Number.isFinite(id)) return res.status(400).send('无效的 ID');
-
-        const existing = await queryOne('SELECT id, user_id FROM daily_rants WHERE id = ?', [id]);
-        if (!existing) return res.status(404).send('吐槽不存在');
-        if (existing.user_id !== req.currentUser.id && req.currentUser.role !== 'MANAGER') {
-            return res.status(403).send('无权删除他人的吐槽');
-        }
-
-        await runSql('DELETE FROM daily_rants WHERE id = ?', [id]);
-        res.redirect('/daily-rants');
-    } catch (e) {
-        console.error('Daily rant delete error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.get('/competitors', async (req, res) => {
-    try {
-        const keyword = String(req.query.keyword || '').trim();
-        const page = Math.max(1, parseInt(req.query.page) || 1);
-        const pageSize = 15;
-        const offset = (page - 1) * pageSize;
-
-        const whereSql = keyword ? 'WHERE brand_name LIKE ?' : '';
-        const countParams = keyword ? [`%${keyword}%`] : [];
-        const totalRow = await queryOne(`SELECT COUNT(*) AS cnt FROM competitors ${whereSql}`, countParams);
-        const total = totalRow ? totalRow.cnt : 0;
-        const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-        const params = keyword ? [`%${keyword}%`, pageSize, offset] : [pageSize, offset];
-        const competitors = await queryAll(
-            `SELECT * FROM competitors ${whereSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
-            params
-        );
-        const recentActions = {};
-        if (competitors.length > 0) {
-            const ids = competitors.map(c => c.id);
-            const placeholders = ids.map(() => '?').join(',');
-            const actions = await queryAll(
-                `SELECT id, competitor_id, action_text, created_at FROM competitor_actions WHERE competitor_id IN (${placeholders}) ORDER BY competitor_id ASC, created_at DESC, id DESC`,
-                ids
-            );
-            for (const a of actions) {
-                const cid = a.competitor_id;
-                if (!recentActions[cid]) recentActions[cid] = [];
-                if (recentActions[cid].length < 2) recentActions[cid].push(a);
-            }
-        }
-        const actionTotals = {};
-        if (competitors.length > 0) {
-            const ids = competitors.map(c => c.id);
-            const placeholders = ids.map(() => '?').join(',');
-            const rows = await queryAll(
-                `SELECT competitor_id, COUNT(*) AS cnt FROM competitor_actions WHERE competitor_id IN (${placeholders}) GROUP BY competitor_id`,
-                ids
-            );
-            for (const r of rows) actionTotals[r.competitor_id] = r.cnt;
-        }
-        const latestMonitorRecords = {};
-        const recentMonitorRecords = {};
-        if (competitors.length > 0) {
-            const ids = competitors.map(c => c.id);
-            const placeholders = ids.map(() => '?').join(',');
-            const records = await queryAll(
-                `SELECT id, competitor_id, image_url, has_change, action_text, created_at
-                 FROM competitor_monitor_records
-                 WHERE competitor_id IN (${placeholders})
-                 ORDER BY competitor_id ASC, created_at DESC, id DESC`,
-                ids
-            );
-            for (const record of records) {
-                record.image_url = normalizeMonitorImageUrl(record.image_url);
-                const cid = record.competitor_id;
-                if (!latestMonitorRecords[cid]) latestMonitorRecords[cid] = record;
-                if (!recentMonitorRecords[cid]) recentMonitorRecords[cid] = [];
-                if (recentMonitorRecords[cid].length < 2) recentMonitorRecords[cid].push(record);
-            }
-        }
-        const monitorTotals = {};
-        if (competitors.length > 0) {
-            const ids = competitors.map(c => c.id);
-            const placeholders = ids.map(() => '?').join(',');
-            const rows = await queryAll(
-                `SELECT competitor_id, COUNT(*) AS cnt
-                 FROM competitor_monitor_records
-                 WHERE competitor_id IN (${placeholders})
-                 GROUP BY competitor_id`,
-                ids
-            );
-            for (const r of rows) monitorTotals[r.competitor_id] = r.cnt;
-        }
-        res.render('competitors', {
-            competitors, recentActions, actionTotals, latestMonitorRecords, recentMonitorRecords, monitorTotals, keyword,
-            page, pageSize, total, totalPages,
-            title: '竞品库'
-        });
-    } catch (e) {
-        console.error('Competitors page error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
 // ========== API Endpoints ==========
 
@@ -1496,17 +827,24 @@ app.post('/api/external/competitor-monitor', async (req, res) => {
         if (!imageUrl) return res.status(400).json({ error: 'image_url 为必填项' });
         if (imageUrl.length > 1000) return res.status(400).json({ error: 'image_url 过长（最多 1000 字符）' });
 
-        const hasChange = parseBooleanFlag(req.body.has_change);
-        if (hasChange === null) {
-            return res.status(400).json({ error: 'has_change 必须为 true/false 或 1/0' });
-        }
+        const previousRecord = await queryOne(
+            `SELECT image_url FROM competitor_monitor_records
+             WHERE competitor_id = ?
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1`,
+            [competitor.id]
+        );
 
-        const actionText = String(req.body.action_text || '').trim();
-        if (actionText.length > 2000) {
-            return res.status(400).json({ error: 'action_text 过长（最多 2000 字符）' });
-        }
-        if (hasChange && !actionText) {
-            return res.status(400).json({ error: '有变化时 action_text 为必填项' });
+        let hasChange = false;
+        let actionText = null;
+        if (previousRecord && previousRecord.image_url) {
+            const previousImageUrl = normalizeMonitorImageUrl(previousRecord.image_url);
+            const compareResult = await compareStorefrontImages(previousImageUrl, imageUrl);
+            hasChange = compareResult.is_changed;
+            actionText = compareResult.summary || null;
+            if (actionText && actionText.length > 2000) {
+                actionText = actionText.slice(0, 2000);
+            }
         }
 
         const monitorResult = await runSql(
@@ -1518,7 +856,7 @@ app.post('/api/external/competitor-monitor', async (req, res) => {
         if (hasChange) {
             await runSql(
                 'INSERT INTO competitor_actions (competitor_id, action_text) VALUES (?, ?)',
-                [competitor.id, actionText]
+                [competitor.id, actionText || '检测到店铺变化']
             );
             actionAdded = true;
         }
@@ -1530,6 +868,8 @@ app.post('/api/external/competitor-monitor', async (req, res) => {
             competitor_id: competitor.id,
             brand_name: competitor.brand_name,
             monitor_record_id: monitorResult && monitorResult.insertId ? monitorResult.insertId : null,
+            has_change: hasChange,
+            action_text: actionText,
             action_added: actionAdded
         });
     } catch (e) {
@@ -1882,82 +1222,6 @@ app.patch('/api/version/:id', async (req, res) => {
     }
 });
 
-// Render a single version as a page
-app.get('/product/:asin/version/:versionId', async (req, res) => {
-    try {
-        const { asin, versionId } = req.params;
-        const product = await queryOne('SELECT * FROM products WHERE asin = ?', [asin]);
-        if (!product) return res.status(404).send('Product not found');
-
-        const version = await queryOne(
-            'SELECT * FROM product_versions WHERE id = ? AND product_id = ?',
-            [versionId, product.id]
-        );
-        if (!version) return res.status(404).send('版本不存在');
-
-        let snapshot;
-        try { snapshot = JSON.parse(version.snapshot_data); } catch (e) { snapshot = { modules: [] }; }
-
-        // Filter out 基础信息 (sort_order=1) from rendering, like the regular product page
-        const modules = (snapshot.modules || []).filter(m => m.sort_order > 1);
-
-        // Re-build recordMap from snapshot for template compatibility
-        const recordMap = {};
-        for (const m of snapshot.modules || []) {
-            for (const it of m.sop_items || []) {
-                recordMap[it.id] = {
-                    id: 'v_' + version.id + '_' + it.id, // synthetic id, prefixed so it can't clash
-                    status: it.record?.status || '待处理',
-                    remark: it.record?.remark || '',
-                    image_url: it.record?.image_url || null
-                };
-            }
-        }
-
-        // Calculate module progress based on snapshot
-        const moduleProgress = {};
-        for (const m of snapshot.modules || []) {
-            let total = 0, completed = 0;
-            for (const it of m.sop_items || []) {
-                if (!it.is_data_column) {
-                    total++;
-                    if ((it.record?.status) === '已完成') completed++;
-                }
-            }
-            moduleProgress[m.id] = {
-                completed, total,
-                percentage: total > 0 ? Math.round(completed / total * 10000) / 10000 : 0
-            };
-        }
-
-        // Build a virtual product object reflecting snapshot
-        const virtualProduct = {
-            ...product,
-            name: snapshot.product?.name ?? product.name,
-            category: snapshot.product?.category ?? product.category,
-            status: snapshot.product?.status ?? product.status,
-            overall_progress: snapshot.product?.overall_progress ?? product.overall_progress
-        };
-
-        res.render('product_version', {
-            product: virtualProduct,
-            originalProduct: product,
-            modules, recordMap, moduleProgress,
-            version: {
-                id: version.id,
-                version_number: version.version_number,
-                version_name: version.version_name,
-                created_at: version.created_at,
-                updated_at: version.updated_at
-            },
-            title: `${product.name || product.asin} - 版本 V${version.version_number}`
-        });
-    } catch (e) {
-        console.error('Version view error:', e);
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
 // Update a record inside a version snapshot
 app.patch('/api/version/:versionId/item/:itemId', async (req, res) => {
     try {
@@ -1997,354 +1261,18 @@ app.patch('/api/version/:versionId/item/:itemId', async (req, res) => {
     }
 });
 
-app.get('/users', async (req, res) => {
-    try {
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        res.render('users', { users, error: null, title: '人员管理' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
-app.post('/users', async (req, res) => {
-    try {
-        const name = String(req.body.name || '').trim();
-        const role = String(req.body.role || '').trim();
-        const password = String(req.body.password || '');
-        if (!name) {
-            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
-            return res.status(400).render('users', { users, error: '姓名不能为空', title: '人员管理' });
-        }
-        if (!['OPS', 'DESIGN', 'MANAGER'].includes(role)) {
-            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
-            return res.status(400).render('users', { users, error: '角色不合法', title: '人员管理' });
-        }
-        if (!password || password.length < 4) {
-            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
-            return res.status(400).render('users', { users, error: '密码至少 4 位', title: '人员管理' });
-        }
-        const password_hash = hashPassword(password);
-        await runSql('INSERT INTO users (name, password_hash, role) VALUES (?, ?, ?)', [name, password_hash, role]);
-        cachedDefaultDesignUserId = null;
-        res.redirect('/users');
-    } catch (e) {
-        const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
-        res.status(400).render('users', { users, error: e.message, title: '人员管理' });
-    }
-});
 
-app.post('/users/:id/password', async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        if (!Number.isFinite(id)) return res.redirect('/users');
-        const password = String(req.body.password || '');
-        if (!password || password.length < 4) {
-            const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
-            return res.status(400).render('users', { users, error: '新密码至少 4 位', title: '人员管理' });
-        }
-        const existing = await queryOne('SELECT id FROM users WHERE id = ?', [id]);
-        if (!existing) return res.redirect('/users');
-        await runSql('UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?', [hashPassword(password), id]);
-        res.redirect('/users');
-    } catch (e) {
-        const users = await queryAll('SELECT id, name, role, created_at, updated_at FROM users ORDER BY id ASC');
-        res.status(400).render('users', { users, error: e.message, title: '人员管理' });
-    }
-});
 
-app.post('/users/:id/delete', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        if (!id) return res.redirect('/users');
-        await runSql('DELETE FROM users WHERE id = ?', [id]);
-        cachedDefaultDesignUserId = null;
-        res.redirect('/users');
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
-app.get('/sprints', async (req, res) => {
-    try {
-        const sprints = await queryAll(
-            `SELECT sp.*, u.name AS owner_name
-             FROM sprint_projects sp
-             LEFT JOIN users u ON sp.owner_id = u.id
-             ORDER BY sp.id DESC`
-        );
-        res.render('sprints', { sprints, title: '冲刺项目' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
-app.get('/sprints/new', async (req, res) => {
-    try {
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        res.render('sprint_form', { sprint: null, users, error: null, title: '新建冲刺项目' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
-app.post('/sprints', async (req, res) => {
-    try {
-        const asin = String(req.body.asin || '').trim();
-        const owner_id = req.body.owner_id ? Number(req.body.owner_id) : null;
-        const status = String(req.body.status || 'ACTIVE').trim();
-        const start_date = String(req.body.start_date || '').trim();
-        const end_date = String(req.body.end_date || '').trim();
-        const target_cycle_days = Number(req.body.target_cycle_days || 14);
-        if (!asin) throw new Error('ASIN 不能为空');
-        const sd = parseYmd(start_date);
-        const ed = parseYmd(end_date);
-        if (!sd || !ed) throw new Error('开始/结束日期不合法');
-        if (ed.getTime() < sd.getTime()) throw new Error('结束日期不能早于开始日期');
-        if (!Number.isFinite(target_cycle_days) || target_cycle_days <= 0) throw new Error('目标周期不合法');
-        if (!['ACTIVE', 'MAINTENANCE', 'STOPPED'].includes(status)) throw new Error('状态不合法');
 
-        const numOrNull = v => {
-            const s = String(v || '').trim();
-            if (!s) return null;
-            const n = Number(s);
-            if (!Number.isFinite(n)) return null;
-            return n;
-        };
-        const intOrNull = v => {
-            const n = numOrNull(v);
-            return n === null ? null : Math.trunc(n);
-        };
 
-        await runSql(
-            `INSERT INTO sprint_projects
-             (asin, owner_id, status, start_date, end_date, target_cycle_days,
-              current_daily_orders, target_daily_orders, current_rank, target_rank,
-              promo_tacos_limit, stable_tacos_target, max_loss_7d, inventory_days,
-              competitor_action, page_ok, exit_conditions, profit_margin, acos_limit)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                asin,
-                owner_id || null,
-                status,
-                start_date,
-                end_date,
-                target_cycle_days,
-                numOrNull(req.body.current_daily_orders),
-                numOrNull(req.body.target_daily_orders),
-                intOrNull(req.body.current_rank),
-                intOrNull(req.body.target_rank),
-                numOrNull(req.body.promo_tacos_limit),
-                numOrNull(req.body.stable_tacos_target),
-                numOrNull(req.body.max_loss_7d),
-                intOrNull(req.body.inventory_days),
-                String(req.body.competitor_action || '').trim() || null,
-                req.body.page_ok ? 1 : 0,
-                String(req.body.exit_conditions || '').trim() || null,
-                numOrNull(req.body.profit_margin),
-                numOrNull(req.body.acos_limit)
-            ]
-        );
-        res.redirect('/sprints');
-    } catch (e) {
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        res.status(400).render('sprint_form', { sprint: req.body, users, error: e.message, title: '新建冲刺项目' });
-    }
-});
 
-app.get('/sprints/:id', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const sprint = await queryOne('SELECT * FROM sprint_projects WHERE id = ?', [id]);
-        if (!sprint) return res.status(404).send('项目不存在');
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        res.render('sprint_form', { sprint, users, error: null, title: '编辑冲刺项目' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
-app.post('/sprints/:id', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const sprint = await queryOne('SELECT * FROM sprint_projects WHERE id = ?', [id]);
-        if (!sprint) return res.status(404).send('项目不存在');
-        const owner_id = req.body.owner_id ? Number(req.body.owner_id) : null;
-        const status = String(req.body.status || 'ACTIVE').trim();
-        const start_date = String(req.body.start_date || '').trim();
-        const end_date = String(req.body.end_date || '').trim();
-        const target_cycle_days = Number(req.body.target_cycle_days || 14);
-        const sd = parseYmd(start_date);
-        const ed = parseYmd(end_date);
-        if (!sd || !ed) throw new Error('开始/结束日期不合法');
-        if (ed.getTime() < sd.getTime()) throw new Error('结束日期不能早于开始日期');
-        if (!Number.isFinite(target_cycle_days) || target_cycle_days <= 0) throw new Error('目标周期不合法');
-        if (!['ACTIVE', 'MAINTENANCE', 'STOPPED'].includes(status)) throw new Error('状态不合法');
 
-        const numOrNull = v => {
-            const s = String(v || '').trim();
-            if (!s) return null;
-            const n = Number(s);
-            if (!Number.isFinite(n)) return null;
-            return n;
-        };
-        const intOrNull = v => {
-            const n = numOrNull(v);
-            return n === null ? null : Math.trunc(n);
-        };
 
-        await runSql(
-            `UPDATE sprint_projects SET
-             owner_id = ?, status = ?, start_date = ?, end_date = ?, target_cycle_days = ?,
-             current_daily_orders = ?, target_daily_orders = ?, current_rank = ?, target_rank = ?,
-             promo_tacos_limit = ?, stable_tacos_target = ?, max_loss_7d = ?, inventory_days = ?,
-             competitor_action = ?, page_ok = ?, exit_conditions = ?, profit_margin = ?, acos_limit = ?,
-             updated_at = NOW()
-             WHERE id = ?`,
-            [
-                owner_id || null,
-                status,
-                start_date,
-                end_date,
-                target_cycle_days,
-                numOrNull(req.body.current_daily_orders),
-                numOrNull(req.body.target_daily_orders),
-                intOrNull(req.body.current_rank),
-                intOrNull(req.body.target_rank),
-                numOrNull(req.body.promo_tacos_limit),
-                numOrNull(req.body.stable_tacos_target),
-                numOrNull(req.body.max_loss_7d),
-                intOrNull(req.body.inventory_days),
-                String(req.body.competitor_action || '').trim() || null,
-                req.body.page_ok ? 1 : 0,
-                String(req.body.exit_conditions || '').trim() || null,
-                numOrNull(req.body.profit_margin),
-                numOrNull(req.body.acos_limit),
-                id
-            ]
-        );
-        res.redirect('/sprints');
-    } catch (e) {
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        const sprint = { ...req.body, id: req.params.id };
-        res.status(400).render('sprint_form', { sprint, users, error: e.message, title: '编辑冲刺项目' });
-    }
-});
-
-app.get('/reviews', async (req, res) => {
-    try {
-        const sprint_id = req.query.sprint_id ? Number(req.query.sprint_id) : null;
-        const status = String(req.query.status || '').trim();
-        const now = new Date();
-        const weekStartStr = toDateString(getMondayStart(now));
-        await ensureWeeklyReviewsForActiveSprints(weekStartStr);
-
-        const where = ['1=1'];
-        const params = [];
-        if (sprint_id) {
-            where.push('wr.sprint_id = ?');
-            params.push(sprint_id);
-        }
-        if (status) {
-            where.push('wr.status = ?');
-            params.push(status);
-        }
-        const reviews = await queryAll(
-            `SELECT wr.*, sp.asin
-             FROM weekly_reviews wr
-             JOIN sprint_projects sp ON wr.sprint_id = sp.id
-             WHERE ${where.join(' AND ')}
-             ORDER BY wr.week_start_date DESC, wr.id DESC`,
-            params
-        );
-        const sprints = await queryAll('SELECT id, asin, status FROM sprint_projects ORDER BY id DESC');
-        res.render('reviews', {
-            reviews,
-            sprints,
-            current_sprint_id: sprint_id ? String(sprint_id) : '',
-            current_status: status || '',
-            title: '周复盘'
-        });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.get('/reviews/:id', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const review = await queryOne(
-            `SELECT wr.*, sp.asin
-             FROM weekly_reviews wr
-             JOIN sprint_projects sp ON wr.sprint_id = sp.id
-             WHERE wr.id = ?`,
-            [id]
-        );
-        if (!review) return res.status(404).send('复盘不存在');
-        res.render('review_form', { review, error: null, title: '周复盘填写' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/reviews/:id', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const review = await queryOne('SELECT * FROM weekly_reviews WHERE id = ?', [id]);
-        if (!review) return res.status(404).send('复盘不存在');
-
-        const actual_max_loss = Number(req.body.actual_max_loss);
-        const actual_tacos = Number(req.body.actual_tacos);
-        const decision = String(req.body.decision || '').trim();
-        const status = String(req.body.status || '').trim();
-        const summary = String(req.body.summary || '').trim();
-
-        if (!Number.isFinite(actual_max_loss)) throw new Error('本周实际最大亏损不合法');
-        if (!Number.isFinite(actual_tacos)) throw new Error('当前实际TACOS不合法');
-        if (!['CONTINUE', 'MAINTENANCE', 'STOPPED'].includes(decision)) throw new Error('决策不合法');
-        if (!['PENDING', 'COMPLETED'].includes(status)) throw new Error('复盘状态不合法');
-        if (!summary) throw new Error('复盘结论不能为空');
-
-        await runSql(
-            `UPDATE weekly_reviews SET
-             actual_max_loss = ?, actual_tacos = ?, decision = ?, status = ?, summary = ?, updated_at = NOW()
-             WHERE id = ?`,
-            [actual_max_loss, actual_tacos, decision, status, summary, id]
-        );
-
-        if (decision === 'MAINTENANCE') {
-            await runSql("UPDATE sprint_projects SET status = 'MAINTENANCE', updated_at = NOW() WHERE id = ?", [
-                review.sprint_id
-            ]);
-        } else if (decision === 'STOPPED') {
-            await runSql("UPDATE sprint_projects SET status = 'STOPPED', updated_at = NOW() WHERE id = ?", [review.sprint_id]);
-        } else if (decision === 'CONTINUE') {
-            await runSql("UPDATE sprint_projects SET status = 'ACTIVE', updated_at = NOW() WHERE id = ?", [review.sprint_id]);
-        }
-
-        res.redirect('/reviews?sprint_id=' + review.sprint_id);
-    } catch (e) {
-        const id = Number(req.params.id);
-        const review = await queryOne(
-            `SELECT wr.*, sp.asin
-             FROM weekly_reviews wr
-             JOIN sprint_projects sp ON wr.sprint_id = sp.id
-             WHERE wr.id = ?`,
-            [id]
-        );
-        res.status(400).render('review_form', { review: { ...review, ...req.body }, error: e.message, title: '周复盘填写' });
-    }
-});
-
-app.get('/metrics/manual', async (req, res) => {
-    try {
-        const now = new Date();
-        const current_date = toDateString(now);
-        const prefill = await queryAll("SELECT asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE') ORDER BY id DESC");
-        res.render('metrics_manual', { current_date, prefill, title: '每日数据填报' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
 
 app.post('/api/v1/metrics/upload', async (req, res) => {
     try {
@@ -2429,159 +1357,6 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
     }
 });
 
-app.get('/tickets', async (req, res) => {
-    try {
-        const asin = String(req.query.asin || '').trim();
-        const status = String(req.query.status || '').trim();
-        const owner_id = req.query.owner_id ? Number(req.query.owner_id) : null;
-        const where = ['1=1'];
-        const params = [];
-        if (asin) {
-            where.push('t.asin LIKE ?');
-            params.push(`%${asin}%`);
-        }
-        if (status) {
-            where.push('t.status = ?');
-            params.push(status);
-        }
-        if (owner_id) {
-            where.push('t.owner_id = ?');
-            params.push(owner_id);
-        }
-        const tickets = await queryAll(
-            `SELECT t.*,
-                    u1.name AS owner_name,
-                    u2.name AS co_owner_name,
-                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
-             FROM issue_tickets t
-             LEFT JOIN users u1 ON t.owner_id = u1.id
-             LEFT JOIN users u2 ON t.co_owner_id = u2.id
-             WHERE ${where.join(' AND ')}
-             ORDER BY FIELD(t.status,'TODO','PENDING_DESIGN','WAITING_VERIFY','FAILED','RESOLVED'), t.sla_deadline IS NULL, t.sla_deadline ASC, t.id DESC`,
-            params
-        );
-        const now = new Date();
-        for (const t of tickets) {
-            t.sla_deadline = t.sla_deadline_fmt || null;
-            t.is_overdue = t.sla_deadline && new Date(t.sla_deadline.replace(' ', 'T')).getTime() < now.getTime();
-        }
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        res.render('tickets', {
-            tickets,
-            users,
-            current_asin: asin,
-            current_status: status,
-            current_owner_id: owner_id ? String(owner_id) : '',
-            title: '工单看板'
-        });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.get('/tickets/:id', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const ticket = await queryOne(
-            `SELECT t.*,
-                    u1.name AS owner_name,
-                    u2.name AS co_owner_name,
-                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
-             FROM issue_tickets t
-             LEFT JOIN users u1 ON t.owner_id = u1.id
-             LEFT JOIN users u2 ON t.co_owner_id = u2.id
-             WHERE t.id = ?`,
-            [id]
-        );
-        if (!ticket) return res.status(404).send('工单不存在');
-        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        res.render('ticket_detail', { ticket, users, error: null, title: '工单详情' });
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/tickets/:id/assign', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const owner_id = req.body.owner_id ? Number(req.body.owner_id) : null;
-        const co_owner_id = req.body.co_owner_id ? Number(req.body.co_owner_id) : null;
-        await runSql('UPDATE issue_tickets SET owner_id = ?, co_owner_id = ?, updated_at = NOW() WHERE id = ?', [
-            owner_id || null,
-            co_owner_id || null,
-            id
-        ]);
-        res.redirect('/tickets/' + id);
-    } catch (e) {
-        res.status(500).send('Server error: ' + e.message);
-    }
-});
-
-app.post('/tickets/:id/status', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const status = String(req.body.status || '').trim();
-        if (!['TODO', 'PENDING_DESIGN', 'WAITING_VERIFY', 'RESOLVED', 'FAILED'].includes(status)) {
-            throw new Error('状态不合法');
-        }
-        if (status === 'RESOLVED' || status === 'FAILED') {
-            const row = await queryOne('SELECT verify_evidence, verify_file_url FROM issue_tickets WHERE id = ?', [id]);
-            const hasEvidence = row && ((row.verify_evidence && String(row.verify_evidence).trim()) || row.verify_file_url);
-            if (!hasEvidence) throw new Error('结单必须填写验收指标或上传凭证');
-            await runSql('UPDATE issue_tickets SET status = ?, resolved_at = NOW(), updated_at = NOW() WHERE id = ?', [status, id]);
-        } else {
-            await runSql('UPDATE issue_tickets SET status = ?, updated_at = NOW() WHERE id = ?', [status, id]);
-        }
-        res.redirect('/tickets/' + id);
-    } catch (e) {
-        const id = Number(req.params.id);
-        const ticket = await queryOne(
-            `SELECT t.*,
-                    u1.name AS owner_name,
-                    u2.name AS co_owner_name,
-                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
-             FROM issue_tickets t
-             LEFT JOIN users u1 ON t.owner_id = u1.id
-             LEFT JOIN users u2 ON t.co_owner_id = u2.id
-             WHERE t.id = ?`,
-            [id]
-        );
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
-        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
-    }
-});
-
-app.post('/tickets/:id/design-request', async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const design_request = String(req.body.design_request || '').trim();
-        if (!design_request) throw new Error('修改意见不能为空');
-        await runSql(
-            "UPDATE issue_tickets SET design_request = ?, status = 'PENDING_DESIGN', updated_at = NOW() WHERE id = ?",
-            [design_request, id]
-        );
-        res.redirect('/tickets/' + id);
-    } catch (e) {
-        const id = Number(req.params.id);
-        const ticket = await queryOne(
-            `SELECT t.*,
-                    u1.name AS owner_name,
-                    u2.name AS co_owner_name,
-                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
-             FROM issue_tickets t
-             LEFT JOIN users u1 ON t.owner_id = u1.id
-             LEFT JOIN users u2 ON t.co_owner_id = u2.id
-             WHERE t.id = ?`,
-            [id]
-        );
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
-        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
-    }
-});
-
 app.post('/tickets/:id/design-asset', fileUpload.single('file'), async (req, res) => {
     try {
         const id = Number(req.params.id);
@@ -2591,23 +1366,9 @@ app.post('/tickets/:id/design-asset', fileUpload.single('file'), async (req, res
             "UPDATE issue_tickets SET design_asset_url = ?, status = 'WAITING_VERIFY', updated_at = NOW() WHERE id = ?",
             [url, id]
         );
-        res.redirect('/tickets/' + id);
+        res.json({ status: 'ok' });
     } catch (e) {
-        const id = Number(req.params.id);
-        const ticket = await queryOne(
-            `SELECT t.*,
-                    u1.name AS owner_name,
-                    u2.name AS co_owner_name,
-                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
-             FROM issue_tickets t
-             LEFT JOIN users u1 ON t.owner_id = u1.id
-             LEFT JOIN users u2 ON t.co_owner_id = u2.id
-             WHERE t.id = ?`,
-            [id]
-        );
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
-        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
+        res.status(400).json({ error: e.message });
     }
 });
 
@@ -2627,23 +1388,9 @@ app.post('/tickets/:id/verify', fileUpload.single('file'), async (req, res) => {
              WHERE id = ?`,
             [verify_evidence || null, verify_file_url, result, id]
         );
-        res.redirect('/tickets/' + id);
+        res.json({ status: 'ok' });
     } catch (e) {
-        const id = Number(req.params.id);
-        const ticket = await queryOne(
-            `SELECT t.*,
-                    u1.name AS owner_name,
-                    u2.name AS co_owner_name,
-                    DATE_FORMAT(t.sla_deadline, '%Y-%m-%d %H:%i:%s') AS sla_deadline_fmt
-             FROM issue_tickets t
-             LEFT JOIN users u1 ON t.owner_id = u1.id
-             LEFT JOIN users u2 ON t.co_owner_id = u2.id
-             WHERE t.id = ?`,
-            [id]
-        );
-        const users = await queryAll('SELECT * FROM users ORDER BY id ASC');
-        ticket.sla_deadline = ticket.sla_deadline_fmt || null;
-        res.status(400).render('ticket_detail', { ticket, users, error: e.message, title: '工单详情' });
+        res.status(400).json({ error: e.message });
     }
 });
 
@@ -2775,6 +1522,13 @@ setInterval(() => {
 }, 60 * 1000);
 
 schedulerTick().catch(e => console.error('Scheduler error:', e));
+
+app.get('*', (req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api')) {
+        return next();
+    }
+    res.sendFile(INDEX_HTML);
+});
 
 app.use((err, req, res, next) => {
     if (err && (err.type === 'entity.too.large' || err.status === 413)) {

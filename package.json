@@ -5,15 +5,34 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node --watch server.js",
+    "dev:client": "vite --config frontend/vite.config.js",
+    "build": "vite build --config frontend/vite.config.js",
+    "preview": "vite preview --config frontend/vite.config.js"
   },
   "dependencies": {
+    "axios": "^1.18.0",
+    "dompurify": "^3.1.6",
     "dotenv": "^17.4.2",
-    "ejs": "^3.1.9",
     "express": "^4.18.2",
+    "github-markdown-css": "^5.6.1",
+    "highlight.js": "^11.10.0",
+    "jsonwebtoken": "^9.0.3",
+    "markdown-it": "^14.1.0",
+    "markdown-it-footnote": "^4.0.0",
+    "markdown-it-task-lists": "^2.1.1",
     "multer": "^2.1.1",
     "mysql2": "^3.9.0",
     "sequelize": "^6.37.8",
+    "viewerjs": "^1.11.7",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "vite": "^6.2.0"
   }
 }

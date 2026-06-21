@@ -346,6 +346,53 @@ async function initDb() {
     }
 
     try {
+        await p.query(`CREATE TABLE IF NOT EXISTS knowledge_drafts (
+            user_id INT NOT NULL PRIMARY KEY,
+            doc_id INT DEFAULT NULL,
+            title VARCHAR(500) DEFAULT '',
+            content LONGTEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS product_selection_analyses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT DEFAULT NULL,
+            competitor_url VARCHAR(1000) NOT NULL,
+            asin VARCHAR(30) NOT NULL,
+            box_length DECIMAL(10,2) DEFAULT NULL COMMENT '箱规-长(cm)',
+            box_width DECIMAL(10,2) DEFAULT NULL COMMENT '箱规-宽(cm)',
+            box_height DECIMAL(10,2) DEFAULT NULL COMMENT '箱规-高(cm)',
+            box_gross_weight DECIMAL(10,3) DEFAULT NULL COMMENT '毛重(kg)',
+            box_quantity INT DEFAULT NULL COMMENT '箱装数量',
+            purchase_price DECIMAL(12,2) DEFAULT NULL COMMENT '进货价',
+            status ENUM('PENDING','PROCESSING','COMPLETED','FAILED') NOT NULL DEFAULT 'PENDING',
+            report LONGTEXT,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            completed_at DATETIME DEFAULT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+            INDEX idx_status_created (status, created_at),
+            INDEX idx_user_created (user_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        // Silently skip
+    }
+
+    try {
+        await p.query(
+            'ALTER TABLE product_selection_analyses ADD COLUMN asin VARCHAR(30) NOT NULL DEFAULT \'\' AFTER competitor_url'
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
         await p.query(`CREATE TABLE IF NOT EXISTS issue_tickets (
             id INT AUTO_INCREMENT PRIMARY KEY,
             sprint_id INT DEFAULT NULL,
@@ -454,7 +501,11 @@ async function queryOne(sql, params = []) {
 
 async function runSql(sql, params = []) {
     const pool = getPool();
-    const [result] = await pool.query(sql, buildQueryOptions(params));
+    const [result, metadata] = await pool.query(sql, buildQueryOptions(params));
+    // Sequelize 6 INSERT 时 result 为数字 insertId，需归一化为 OkPacket 结构
+    if (typeof result === 'number') {
+        return { insertId: result, affectedRows: metadata };
+    }
     return result;
 }
 

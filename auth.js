@@ -1,12 +1,15 @@
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 
 const SESSION_COOKIE = 'sop_sid';
+const JWT_TTL = process.env.JWT_TTL || '7d';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const sessions = new Map();
 
 const PUBLIC_ROUTES = [
     { method: 'GET', path: '/login' },
     { method: 'POST', path: '/login' },
+    { method: 'GET', path: '/api/auth/login-hint' },
+    { method: 'POST', path: '/api/auth/login' },
     { method: 'POST', path: '/api/external/competitor-monitor' },
     { method: 'POST', path: '/api/v1/metrics/upload' }
 ];
@@ -24,6 +27,15 @@ function parseCookies(req) {
         cookies[key] = decodeURIComponent(value);
     }
     return cookies;
+}
+
+function getJwtSecret() {
+    const secret = String(process.env.JWT_SECRET || '').trim();
+    if (secret) return secret;
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('生产环境必须配置 JWT_SECRET');
+    }
+    return 'sop-dev-jwt-secret-change-me';
 }
 
 function hashPassword(password) {
@@ -44,45 +56,56 @@ function verifyPassword(password, stored) {
     }
 }
 
-function pruneSessions() {
-    const now = Date.now();
-    for (const [token, session] of sessions.entries()) {
-        if (!session || session.expiresAt <= now) {
-            sessions.delete(token);
-        }
-    }
-}
-
-function createSession(user) {
-    pruneSessions();
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, {
+function buildTokenPayload(user) {
+    return {
         userId: user.id,
         name: user.name,
         role: user.role,
-        mustChangePassword: !!user.must_change_password,
-        expiresAt: Date.now() + SESSION_TTL_MS
-    });
-    return token;
+        mustChangePassword: !!user.must_change_password
+    };
+}
+
+function payloadToSession(payload) {
+    return {
+        userId: payload.userId,
+        name: payload.name,
+        role: payload.role,
+        mustChangePassword: !!payload.mustChangePassword
+    };
+}
+
+function createSession(user) {
+    return jwt.sign(buildTokenPayload(user), getJwtSecret(), { expiresIn: JWT_TTL });
+}
+
+function getTokenFromRequest(req) {
+    const cookies = parseCookies(req);
+    if (cookies[SESSION_COOKIE]) return cookies[SESSION_COOKIE];
+
+    const auth = String(req.headers.authorization || '');
+    if (auth.startsWith('Bearer ')) {
+        return auth.slice(7).trim();
+    }
+    return null;
+}
+
+function verifyToken(token) {
+    if (!token) return null;
+    try {
+        const payload = jwt.verify(token, getJwtSecret());
+        if (!payload || !payload.userId) return null;
+        return payloadToSession(payload);
+    } catch (e) {
+        return null;
+    }
 }
 
 function getSession(req) {
-    const cookies = parseCookies(req);
-    const token = cookies[SESSION_COOKIE];
-    if (!token) return null;
-    const session = sessions.get(token);
-    if (!session) return null;
-    if (session.expiresAt <= Date.now()) {
-        sessions.delete(token);
-        return null;
-    }
-    return session;
+    return verifyToken(getTokenFromRequest(req));
 }
 
 function destroySession(req) {
-    const cookies = parseCookies(req);
-    const token = cookies[SESSION_COOKIE];
-    if (token) sessions.delete(token);
+    // JWT 无状态，登出时清除 Cookie 即可
 }
 
 function setSessionCookie(res, token) {
@@ -105,6 +128,11 @@ function isPublicRoute(req) {
 
 function requireLogin(req, res, next) {
     if (isPublicRoute(req)) return next();
+
+    // SPA：GET 非 API 由前端 Vue Router 鉴权，服务端只返回 index.html
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+        return next();
+    }
 
     const session = getSession(req);
     if (!session) {
@@ -143,7 +171,10 @@ function attachCurrentUser(req, res, next) {
 const PASSWORD_CHANGE_ALLOWED = [
     { method: 'GET', path: '/account/change-password' },
     { method: 'POST', path: '/account/change-password' },
-    { method: 'POST', path: '/logout' }
+    { method: 'POST', path: '/logout' },
+    { method: 'GET', path: '/api/auth/me' },
+    { method: 'POST', path: '/api/auth/logout' },
+    { method: 'POST', path: '/api/auth/change-password' }
 ];
 
 function isPasswordChangeAllowed(req) {
@@ -158,16 +189,38 @@ function requirePasswordChanged(req, res, next) {
     if (req.path.startsWith('/api/')) {
         return res.status(403).json({ error: '请先修改密码' });
     }
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+        return next();
+    }
     return res.redirect('/account/change-password');
 }
 
-function updateSessionUser(req, patch) {
-    const cookies = parseCookies(req);
-    const token = cookies[SESSION_COOKIE];
-    if (!token) return;
-    const session = sessions.get(token);
-    if (!session) return;
-    Object.assign(session, patch);
+function updateSessionUser(req, patch, res) {
+    const session = getSession(req);
+    if (!session) return null;
+
+    const nextSession = {
+        userId: session.userId,
+        name: patch.name !== undefined ? patch.name : session.name,
+        role: patch.role !== undefined ? patch.role : session.role,
+        mustChangePassword: patch.mustChangePassword !== undefined
+            ? !!patch.mustChangePassword
+            : session.mustChangePassword
+    };
+
+    const token = jwt.sign(
+        {
+            userId: nextSession.userId,
+            name: nextSession.name,
+            role: nextSession.role,
+            mustChangePassword: nextSession.mustChangePassword
+        },
+        getJwtSecret(),
+        { expiresIn: JWT_TTL }
+    );
+
+    if (res) setSessionCookie(res, token);
+    return token;
 }
 
 /**
