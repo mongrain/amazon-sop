@@ -359,40 +359,6 @@ async function initDb() {
     }
 
     try {
-        await p.query(`CREATE TABLE IF NOT EXISTS product_selection_analyses (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT DEFAULT NULL,
-            competitor_url VARCHAR(1000) NOT NULL,
-            asin VARCHAR(30) NOT NULL,
-            box_length DECIMAL(10,2) DEFAULT NULL COMMENT '箱规-长(cm)',
-            box_width DECIMAL(10,2) DEFAULT NULL COMMENT '箱规-宽(cm)',
-            box_height DECIMAL(10,2) DEFAULT NULL COMMENT '箱规-高(cm)',
-            box_gross_weight DECIMAL(10,3) DEFAULT NULL COMMENT '毛重(kg)',
-            box_quantity INT DEFAULT NULL COMMENT '箱装数量',
-            purchase_price DECIMAL(12,2) DEFAULT NULL COMMENT '进货价',
-            status ENUM('PENDING','PROCESSING','COMPLETED','FAILED') NOT NULL DEFAULT 'PENDING',
-            report LONGTEXT,
-            error_message TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            completed_at DATETIME DEFAULT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-            INDEX idx_status_created (status, created_at),
-            INDEX idx_user_created (user_id, created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-    } catch (e) {
-        // Silently skip
-    }
-
-    try {
-        await p.query(
-            'ALTER TABLE product_selection_analyses ADD COLUMN asin VARCHAR(30) NOT NULL DEFAULT \'\' AFTER competitor_url'
-        );
-    } catch (e) {
-        if (!isSafeMigrationError(e)) {}
-    }
-
-    try {
         await p.query(`CREATE TABLE IF NOT EXISTS issue_tickets (
             id INT AUTO_INCREMENT PRIMARY KEY,
             sprint_id INT DEFAULT NULL,
@@ -420,6 +386,44 @@ async function initDb() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e) {
         // Silently skip
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS exchange_rates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            pair VARCHAR(20) NOT NULL DEFAULT 'USD/CNY',
+            rate DECIMAL(12,6) NOT NULL,
+            fetched_at DATETIME NOT NULL,
+            UNIQUE KEY uk_pair (pair)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS product_economics (
+            product_id INT NOT NULL PRIMARY KEY,
+            length_cm DECIMAL(10,2) DEFAULT NULL,
+            width_cm DECIMAL(10,2) DEFAULT NULL,
+            height_cm DECIMAL(10,2) DEFAULT NULL,
+            selling_price_usd DECIMAL(12,2) DEFAULT NULL,
+            gross_weight_kg DECIMAL(10,3) DEFAULT NULL,
+            units_per_box INT DEFAULT 1,
+            cost_price_rmb DECIMAL(12,2) DEFAULT NULL,
+            first_leg_usd DECIMAL(12,4) DEFAULT NULL,
+            first_leg_manual TINYINT DEFAULT 0,
+            tax_usd DECIMAL(12,2) DEFAULT 0,
+            misc_fee_usd DECIMAL(12,2) DEFAULT NULL,
+            ad_spend_usd DECIMAL(12,4) DEFAULT NULL,
+            ad_spend_manual TINYINT DEFAULT 0,
+            last_mile_fee_usd DECIMAL(12,4) DEFAULT NULL,
+            last_mile_fee_manual TINYINT DEFAULT 0,
+            order_velocity DECIMAL(12,2) DEFAULT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
     }
 
     // Add composite indexes that match the hot query paths.

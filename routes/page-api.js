@@ -1,3 +1,9 @@
+const {
+    getProductEconomics,
+    ensureEconomicsForProduct,
+    updateProductEconomics
+} = require('../product-economics');
+
 /**
  * Vue 前端：公开路由（登录）
  */
@@ -71,6 +77,8 @@ function registerProtectedPageApi(app, ctx) {
         buildTableRefMap,
         importExcel,
         EXCEL_PATH,
+        importTacosExcel,
+        TACOS_PATH,
         hashPassword,
         verifyPassword,
         destroySession,
@@ -243,7 +251,22 @@ function registerProtectedPageApi(app, ctx) {
                 };
             }
 
-            res.json({ product, modules, recordMap, moduleProgress });
+            await ensureEconomicsForProduct(product.id, runSql);
+            const economics = await getProductEconomics(product.id, { queryOne, runSql });
+
+            res.json({ product, modules, recordMap, moduleProgress, economics });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.patch('/api/product/:asin/economics', async (req, res) => {
+        try {
+            const { asin } = req.params;
+            const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+            if (!product) return res.status(404).json({ error: 'Product not found' });
+            const economics = await updateProductEconomics(product.id, req.body, { queryOne, runSql });
+            res.json({ economics });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
@@ -351,6 +374,19 @@ function registerProtectedPageApi(app, ctx) {
         try {
             const result = await importExcel();
             res.json({ import_path: EXCEL_PATH, result });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/import/tacos', (req, res) => {
+        res.json({ import_path: TACOS_PATH, result: null });
+    });
+
+    app.post('/api/import/tacos', async (req, res) => {
+        try {
+            const result = await importTacosExcel();
+            res.json({ import_path: TACOS_PATH, result });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }

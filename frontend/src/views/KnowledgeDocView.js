@@ -368,6 +368,7 @@ export default {
                 const payload = { title: title.value.trim(), content: content.value };
                 if (docId.value) payload.id = docId.value;
                 const { data } = await http.post('/api/knowledge/save', payload);
+                isEditMode.value = false;
                 if (data && data.id) {
                     router.push('/knowledge/' + data.id + '?published=1');
                 } else if (docId.value) {
@@ -392,9 +393,13 @@ export default {
             }
         }
 
-        watch(isEditMode, val => {
+        function syncBodyModeClass() {
             document.body.classList.remove('mode-preview', 'mode-edit');
-            document.body.classList.add(val ? 'mode-edit' : 'mode-preview');
+            document.body.classList.add(isEditMode.value ? 'mode-edit' : 'mode-preview');
+        }
+
+        watch(isEditMode, val => {
+            syncBodyModeClass();
             if (val) {
                 refreshLivePreview();
                 if (isNew.value) startDraftAutoSave();
@@ -404,7 +409,7 @@ export default {
         });
 
         onMounted(async () => {
-            document.body.classList.add(isEditMode.value ? 'mode-edit' : 'mode-preview');
+            syncBodyModeClass();
             await loadDoc();
             document.title = pageTitle.value + ' - Amazon 运营SOP管理系统';
             document.addEventListener('paste', onPaste);
@@ -416,6 +421,7 @@ export default {
         onUnmounted(() => {
             stopDraftAutoSave();
             document.removeEventListener('paste', onPaste);
+            document.body.classList.remove('mode-preview', 'mode-edit');
         });
 
         return {

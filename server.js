@@ -16,6 +16,7 @@ const {
     recalculateProductProgress
 } = require('./database');
 const { importExcel, EXCEL_PATH } = require('./importer');
+const { importTacosExcel, TACOS_PATH } = require('./tacos-importer');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
 const { compareStorefrontImages } = require('./gpt');
@@ -34,6 +35,7 @@ const {
 } = require('./auth');
 
 const { registerPublicPageApi, registerProtectedPageApi } = require('./routes/page-api');
+const { ensureEconomicsForProduct } = require('./product-economics');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -80,6 +82,8 @@ function getPageApiCtx() {
         buildTableRefMap,
         importExcel,
         EXCEL_PATH,
+        importTacosExcel,
+        TACOS_PATH,
         hashPassword,
         verifyPassword,
         destroySession,
@@ -928,6 +932,7 @@ app.post('/api/product', async (req, res) => {
         );
         const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
         await ensureRecordsForProduct(product.id);
+        await ensureEconomicsForProduct(product.id, runSql);
         await recalculateProductProgress(product.id);
 
         res.json({ status: 'ok', asin });

@@ -2,6 +2,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { fmtDateTime, getApiError, http, pct } from '@/utils/index.js';
 import { openViewer } from '@/utils/viewer.js';
+import ProductEconomicsPanel from '@/components/ProductEconomicsPanel.js';
 
 function parseAsin(route) {
     return route.params.asin || '';
@@ -25,6 +26,7 @@ function fmtFieldTime(dt) {
 }
 export default {
     name: 'ProductView',
+    components: { ProductEconomicsPanel },
     setup() {
         const router = useRouter();
         const route = useRoute();
@@ -34,6 +36,7 @@ export default {
         const modules = ref([]);
         const recordMap = ref({});
         const moduleProgress = ref({});
+        const economics = ref(null);
         const collapsedGroups = ref({});
         const expandedInstructions = ref(new Set());
         const timeDisplays = ref({});
@@ -113,6 +116,7 @@ export default {
                 modules.value = data.modules || [];
                 recordMap.value = data.recordMap || {};
                 moduleProgress.value = data.moduleProgress || {};
+                economics.value = data.economics || null;
             } catch (e) {
                 alert(getApiError(e, '加载失败'));
             } finally {
@@ -298,6 +302,10 @@ export default {
             });
         }
 
+        function onEconomicsUpdated(payload) {
+            economics.value = payload;
+        }
+
         onMounted(() => {
             loadData();
             document.addEventListener('paste', onPaste);
@@ -307,7 +315,7 @@ export default {
         });
 
         return {
-            loading, product, modules, recordMap, statusOptions, overallProgress,
+            loading, product, modules, recordMap, economics, statusOptions, overallProgress,
             collapsedGroups, expandedInstructions,
             editModalOpen, editName, editCategory, editError,
             versionModalOpen, newVersionName, versionError, versions, versionsLoading,
@@ -317,7 +325,7 @@ export default {
             updateRecord, uploadActionImage, deleteActionImage, updateProductStatus,
             openEditModal, closeEditModal, saveEditProduct, deleteProduct,
             openVersionModal, closeVersionModal, loadVersions, createVersion, deleteVersion,
-            fmtTime, escapeHtml, openViewer
+            fmtTime, escapeHtml, openViewer, onEconomicsUpdated
         };
     },
     template: `<div v-if="loading" style="text-align:center; padding:40px; color:#999;">加载中...</div>
@@ -349,6 +357,7 @@ export default {
                     </div>
                 </div>
             </div>
+            <ProductEconomicsPanel :asin="asin" :economics="economics" @updated="onEconomicsUpdated" />
             <div class="sop-grid">
                 <div v-for="module in modules" :key="module.id" class="sop-card">
                     <div class="sop-card-header">
