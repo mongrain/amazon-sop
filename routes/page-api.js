@@ -182,7 +182,7 @@ function registerProtectedPageApi(app, ctx) {
             }
 
             let products = await queryAll(
-                `SELECT id, asin, name, category, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY created_at ASC LIMIT ? OFFSET ?`,
+                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY created_at ASC LIMIT ? OFFSET ?`,
                 [...filterParams, pageSize, offset]
             );
 

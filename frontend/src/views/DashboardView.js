@@ -1,6 +1,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { buildQuery, getApiError, http, pct } from '@/utils/index.js';
+import { PRODUCT_SITES } from '@/constants/product-sites.js';
 
 export default {
     name: 'DashboardView',
@@ -20,8 +21,8 @@ export default {
 
         const showAddModal = ref(false);
         const showEditModal = ref(false);
-        const addForm = reactive({ asin: '', name: '', category: '' });
-        const editForm = reactive({ asin: '', name: '', category: '' });
+        const addForm = reactive({ asin: '', name: '', category: '', site: '' });
+        const editForm = reactive({ asin: '', name: '', category: '', site: '' });
         const addError = ref('');
         const editError = ref('');
 
@@ -79,6 +80,7 @@ export default {
             addForm.asin = '';
             addForm.name = '';
             addForm.category = '';
+            addForm.site = '';
             addError.value = '';
             showAddModal.value = true;
         }
@@ -87,6 +89,7 @@ export default {
             editForm.asin = p.asin;
             editForm.name = p.name || '';
             editForm.category = p.category || '';
+            editForm.site = p.seq || '';
             editError.value = '';
             showEditModal.value = true;
         }
@@ -101,7 +104,8 @@ export default {
                 const { data } = await http.post('/api/product', {
                     asin: addForm.asin.trim(),
                     name: addForm.name.trim(),
-                    category: addForm.category.trim()
+                    category: addForm.category.trim(),
+                    site: addForm.site || null
                 });
                 showAddModal.value = false;
                 router.push('/product/' + (data.asin || addForm.asin.trim()));
@@ -115,7 +119,8 @@ export default {
             try {
                 await http.put('/api/product/' + encodeURIComponent(editForm.asin), {
                     name: editForm.name.trim(),
-                    category: editForm.category.trim()
+                    category: editForm.category.trim(),
+                    site: editForm.site || null
                 });
                 showEditModal.value = false;
                 loadData();
@@ -146,7 +151,7 @@ export default {
         return {
             loading, products, modules, categories, stats, filters,
             page, total, totalPages, startItem, endItem, pagination,
-            showAddModal, showEditModal, addForm, editForm, addError, editError,
+            showAddModal, showEditModal, addForm, editForm, addError, editError, productSites: PRODUCT_SITES,
             pct, loadData, applyFilters, goProduct, openAddModal, openEditModal,
             addProduct, saveEditProduct, deleteProduct
         };
@@ -190,6 +195,7 @@ export default {
                                 <th style="min-width:50px">ID</th>
                                 <th>ASIN</th>
                                 <th style="min-width:200px">产品名称</th>
+                                <th style="min-width:80px">站点</th>
                                 <th style="min-width:100px">分类</th>
                                 <th style="min-width:80px">状态</th>
                                 <th v-for="m in modules" :key="m.id" style="min-width:100px" :title="m.name">{{ m.name.substring(0, 4) }}</th>
@@ -199,11 +205,11 @@ export default {
                         </thead>
                         <tbody>
                             <tr v-if="loading">
-                                <td :colspan="modules.length + 7" style="text-align:center; padding:40px; color:#999;">加载中…</td>
+                                <td :colspan="modules.length + 8" style="text-align:center; padding:40px; color:#999;">加载中…</td>
                             </tr>
                             <template v-else>
                                 <tr v-if="products.length === 0">
-                                    <td :colspan="modules.length + 7" style="text-align:center; padding:40px; color:#999;">
+                                    <td :colspan="modules.length + 8" style="text-align:center; padding:40px; color:#999;">
                                         暂无产品数据，请先<router-link to="/import" style="color:#409eff;">导入Excel数据</router-link>
                                         或<a href="javascript:void(0)" @click.prevent="openAddModal" style="color:#409eff;">新增产品</a>
                                     </td>
@@ -212,6 +218,7 @@ export default {
                                 <td>{{ p.id }}</td>
                                 <td><code>{{ p.asin }}</code></td>
                                 <td>{{ p.name || '-' }}</td>
+                                <td>{{ p.seq || '-' }}</td>
                                 <td>{{ p.category || '-' }}</td>
                                 <td><span class="status-badge" :class="'status-' + (p.status || '待处理')">{{ p.status || '待处理' }}</span></td>
                                 <td v-for="m in modules" :key="m.id">
@@ -274,6 +281,13 @@ export default {
                             <input v-model="addForm.name" type="text" class="form-input" placeholder="可选">
                         </div>
                         <div class="form-group">
+                            <label>站点</label>
+                            <select v-model="addForm.site" class="form-input">
+                                <option value="">未设置</option>
+                                <option v-for="s in productSites" :key="s" :value="s">{{ s }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label>分类</label>
                             <select v-model="addForm.category" class="form-input">
                                 <option value="">可选</option>
@@ -304,6 +318,13 @@ export default {
                         <div class="form-group">
                             <label>产品名称</label>
                             <input v-model="editForm.name" type="text" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>站点</label>
+                            <select v-model="editForm.site" class="form-input">
+                                <option value="">未设置</option>
+                                <option v-for="s in productSites" :key="s" :value="s">{{ s }}</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>分类</label>

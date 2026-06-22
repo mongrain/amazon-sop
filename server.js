@@ -34,8 +34,9 @@ const {
     ensureDefaultAdmin
 } = require('./auth');
 
-const { registerPublicPageApi, registerProtectedPageApi } = require('./routes/page-api');
+const { PRODUCT_SITES, isValidProductSite } = require('./product-sites');
 const { ensureEconomicsForProduct } = require('./product-economics');
+const { registerPublicPageApi, registerProtectedPageApi } = require('./routes/page-api');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -907,8 +908,25 @@ app.get('/api/competitor/:id/monitor-records', async (req, res) => {
 app.patch('/api/product/:asin', async (req, res) => {
     try {
         const { asin } = req.params;
-        const { status } = req.body;
-        await runSql('UPDATE products SET status = ?, updated_at = NOW() WHERE asin = ?', [status, asin]);
+        const { status, site } = req.body;
+        const sets = [];
+        const params = [];
+        if (status !== undefined) {
+            sets.push('status = ?');
+            params.push(status);
+        }
+        if (site !== undefined) {
+            const siteVal = site ? String(site).trim() : null;
+            if (siteVal && !isValidProductSite(siteVal)) {
+                return res.status(400).json({ error: '无效的站点' });
+            }
+            sets.push('seq = ?');
+            params.push(siteVal);
+        }
+        if (!sets.length) return res.status(400).json({ error: '无更新字段' });
+        sets.push('updated_at = NOW()');
+        params.push(asin);
+        await runSql(`UPDATE products SET ${sets.join(', ')} WHERE asin = ?`, params);
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('API product update error:', e);
@@ -918,8 +936,13 @@ app.patch('/api/product/:asin', async (req, res) => {
 
 app.post('/api/product', async (req, res) => {
     try {
-        const { asin, name, category } = req.body;
+        const { asin, name, category, site } = req.body;
         if (!asin) return res.status(400).json({ error: 'ASIN 必填' });
+
+        const siteVal = site ? String(site).trim() : null;
+        if (siteVal && !isValidProductSite(siteVal)) {
+            return res.status(400).json({ error: '无效的站点' });
+        }
 
         const existing = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
         if (existing) {
@@ -927,8 +950,8 @@ app.post('/api/product', async (req, res) => {
         }
 
         await runSql(
-            'INSERT INTO products (asin, name, category) VALUES (?, ?, ?)',
-            [asin, name || null, category || null]
+            'INSERT INTO products (asin, name, category, seq) VALUES (?, ?, ?, ?)',
+            [asin, name || null, category || null, siteVal]
         );
         const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
         await ensureRecordsForProduct(product.id);
@@ -945,11 +968,20 @@ app.post('/api/product', async (req, res) => {
 app.put('/api/product/:asin', async (req, res) => {
     try {
         const { asin } = req.params;
-        const { name, category } = req.body;
-        await runSql(
-            'UPDATE products SET name = COALESCE(?, name), category = COALESCE(?, category), updated_at = NOW() WHERE asin = ?',
-            [name || null, category || null, asin]
-        );
+        const { name, category, site } = req.body;
+        const sets = ['name = COALESCE(?, name)', 'category = COALESCE(?, category)'];
+        const params = [name || null, category || null];
+        if (site !== undefined) {
+            const siteVal = site ? String(site).trim() : null;
+            if (siteVal && !isValidProductSite(siteVal)) {
+                return res.status(400).json({ error: '无效的站点' });
+            }
+            sets.push('seq = ?');
+            params.push(siteVal);
+        }
+        sets.push('updated_at = NOW()');
+        params.push(asin);
+        await runSql(`UPDATE products SET ${sets.join(', ')} WHERE asin = ?`, params);
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('API product update error:', e);

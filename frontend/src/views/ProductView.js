@@ -3,6 +3,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { fmtDateTime, getApiError, http, pct } from '@/utils/index.js';
 import { openViewer } from '@/utils/viewer.js';
 import ProductEconomicsPanel from '@/components/ProductEconomicsPanel.js';
+import { PRODUCT_SITES } from '@/constants/product-sites.js';
 
 function parseAsin(route) {
     return route.params.asin || '';
@@ -44,6 +45,7 @@ export default {
         const editModalOpen = ref(false);
         const editName = ref('');
         const editCategory = ref('');
+        const editSite = ref('');
         const editError = ref('');
 
         const versionModalOpen = ref(false);
@@ -179,9 +181,19 @@ export default {
             http.patch('/api/product/' + encodeURIComponent(asin.value), { status }).catch(e => console.error('Status update failed:', e));
         }
 
+        function updateProductSite(site) {
+            const siteVal = site || null;
+            http.patch('/api/product/' + encodeURIComponent(asin.value), { site: siteVal })
+                .then(() => {
+                    if (product.value) product.value.seq = siteVal || '';
+                })
+                .catch(e => console.error('Site update failed:', e));
+        }
+
         function openEditModal() {
             editName.value = product.value?.name || '';
             editCategory.value = product.value?.category || '';
+            editSite.value = product.value?.seq || '';
             editError.value = '';
             editModalOpen.value = true;
         }
@@ -192,8 +204,9 @@ export default {
         async function saveEditProduct() {
             const name = editName.value.trim();
             const category = editCategory.value.trim();
+            const site = editSite.value || null;
             try {
-                await http.put('/api/product/' + encodeURIComponent(asin.value), { name, category });
+                await http.put('/api/product/' + encodeURIComponent(asin.value), { name, category, site });
                 await loadData();
                 closeEditModal();
             } catch (e) {
@@ -317,12 +330,12 @@ export default {
         return {
             loading, product, modules, recordMap, economics, statusOptions, overallProgress,
             collapsedGroups, expandedInstructions,
-            editModalOpen, editName, editCategory, editError,
+            editModalOpen, editName, editCategory, editSite, editError, productSites: PRODUCT_SITES,
             versionModalOpen, newVersionName, versionError, versions, versionsLoading,
             asin, getDataItems, getActionItems, getRecord, getModuleProgress,
             isGroupCollapsed, toggleGroup, isInstructionExpanded, toggleInstruction,
             getFieldTime, parseUploadedUrls, fmtDateTime, pct,
-            updateRecord, uploadActionImage, deleteActionImage, updateProductStatus,
+            updateRecord, uploadActionImage, deleteActionImage, updateProductStatus, updateProductSite,
             openEditModal, closeEditModal, saveEditProduct, deleteProduct,
             openVersionModal, closeVersionModal, loadVersions, createVersion, deleteVersion,
             fmtTime, escapeHtml, openViewer, onEconomicsUpdated
@@ -338,7 +351,12 @@ export default {
                         <div class="product-meta mt-1.5">
                             <span class="meta-item">ASIN: <code>{{ product.asin }}</code></span>
                             <span v-if="product.category" class="meta-item">分类: {{ product.category }}</span>
-                            <span v-if="product.seq" class="meta-item">序号: {{ product.seq }}</span>
+                            <span class="meta-item">站点:
+                                <select class="status-select px-2 py-0.5 text-xs" :value="product.seq || ''" @change="updateProductSite($event.target.value)">
+                                    <option value="">未设置</option>
+                                    <option v-for="s in productSites" :key="s" :value="s">{{ s }}</option>
+                                </select>
+                            </span>
                             <span class="meta-item">状态:
                                 <select class="status-select px-2 py-0.5 text-xs" :value="product.status" @change="updateProductStatus($event.target.value)">
                                     <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
@@ -447,6 +465,13 @@ export default {
                     <div class="form-group">
                         <label>分类</label>
                         <input type="text" v-model="editCategory" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>站点</label>
+                        <select v-model="editSite" class="form-input">
+                            <option value="">未设置</option>
+                            <option v-for="s in productSites" :key="s" :value="s">{{ s }}</option>
+                        </select>
                     </div>
                     <div class="modal-error">{{ editError }}</div>
                 </div>
