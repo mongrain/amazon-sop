@@ -2,6 +2,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { buildQuery, getApiError, http, pct } from '@/utils/index.js';
 import { PRODUCT_SITES } from '@/constants/product-sites.js';
+import { PRODUCT_CATEGORIES } from '@/constants/product-categories.js';
 
 export default {
     name: 'DashboardView',
@@ -151,7 +152,8 @@ export default {
         return {
             loading, products, modules, categories, stats, filters,
             page, total, totalPages, startItem, endItem, pagination,
-            showAddModal, showEditModal, addForm, editForm, addError, editError, productSites: PRODUCT_SITES,
+            showAddModal, showEditModal, addForm, editForm, addError, editError,
+            productSites: PRODUCT_SITES, productCategories: PRODUCT_CATEGORIES,
             pct, loadData, applyFilters, goProduct, openAddModal, openEditModal,
             addProduct, saveEditProduct, deleteProduct
         };
@@ -291,8 +293,7 @@ export default {
                             <label>分类</label>
                             <select v-model="addForm.category" class="form-input">
                                 <option value="">可选</option>
-                                <option value="非婴儿类">非婴儿类</option>
-                                <option value="婴儿类">婴儿类</option>
+                                <option v-for="c in productCategories" :key="c" :value="c">{{ c }}</option>
                             </select>
                         </div>
                         <div class="modal-error">{{ addError }}</div>
@@ -330,8 +331,8 @@ export default {
                             <label>分类</label>
                             <select v-model="editForm.category" class="form-input">
                                 <option value="">可选</option>
-                                <option value="非婴儿类">非婴儿类</option>
-                                <option value="婴儿类">婴儿类</option>
+                                <option v-for="c in productCategories" :key="c" :value="c">{{ c }}</option>
+                                <option v-if="editForm.category && !productCategories.includes(editForm.category)" :value="editForm.category">{{ editForm.category }}</option>
                             </select>
                         </div>
                         <div class="modal-error">{{ editError }}</div>

@@ -4,6 +4,7 @@ import { fmtDateTime, getApiError, http, pct } from '@/utils/index.js';
 import { openViewer } from '@/utils/viewer.js';
 import ProductEconomicsPanel from '@/components/ProductEconomicsPanel.js';
 import { PRODUCT_SITES } from '@/constants/product-sites.js';
+import { PRODUCT_CATEGORIES } from '@/constants/product-categories.js';
 
 function parseAsin(route) {
     return route.params.asin || '';
@@ -190,6 +191,15 @@ export default {
                 .catch(e => console.error('Site update failed:', e));
         }
 
+        function updateProductCategory(category) {
+            const categoryVal = category || null;
+            http.patch('/api/product/' + encodeURIComponent(asin.value), { category: categoryVal })
+                .then(() => {
+                    if (product.value) product.value.category = categoryVal || '';
+                })
+                .catch(e => console.error('Category update failed:', e));
+        }
+
         function openEditModal() {
             editName.value = product.value?.name || '';
             editCategory.value = product.value?.category || '';
@@ -330,12 +340,14 @@ export default {
         return {
             loading, product, modules, recordMap, economics, statusOptions, overallProgress,
             collapsedGroups, expandedInstructions,
-            editModalOpen, editName, editCategory, editSite, editError, productSites: PRODUCT_SITES,
+            editModalOpen, editName, editCategory, editSite, editError,
+            productSites: PRODUCT_SITES, productCategories: PRODUCT_CATEGORIES,
             versionModalOpen, newVersionName, versionError, versions, versionsLoading,
             asin, getDataItems, getActionItems, getRecord, getModuleProgress,
             isGroupCollapsed, toggleGroup, isInstructionExpanded, toggleInstruction,
             getFieldTime, parseUploadedUrls, fmtDateTime, pct,
-            updateRecord, uploadActionImage, deleteActionImage, updateProductStatus, updateProductSite,
+            updateRecord, uploadActionImage, deleteActionImage,
+            updateProductStatus, updateProductSite, updateProductCategory,
             openEditModal, closeEditModal, saveEditProduct, deleteProduct,
             openVersionModal, closeVersionModal, loadVersions, createVersion, deleteVersion,
             fmtTime, escapeHtml, openViewer, onEconomicsUpdated
@@ -350,7 +362,13 @@ export default {
                         <h1>{{ product.name || product.asin }}</h1>
                         <div class="product-meta mt-1.5">
                             <span class="meta-item">ASIN: <code>{{ product.asin }}</code></span>
-                            <span v-if="product.category" class="meta-item">分类: {{ product.category }}</span>
+                            <span class="meta-item">分类:
+                                <select class="status-select px-2 py-0.5 text-xs" :value="product.category || ''" @change="updateProductCategory($event.target.value)">
+                                    <option value="">未设置</option>
+                                    <option v-for="c in productCategories" :key="c" :value="c">{{ c }}</option>
+                                    <option v-if="product.category && !productCategories.includes(product.category)" :value="product.category">{{ product.category }}</option>
+                                </select>
+                            </span>
                             <span class="meta-item">站点:
                                 <select class="status-select px-2 py-0.5 text-xs" :value="product.seq || ''" @change="updateProductSite($event.target.value)">
                                     <option value="">未设置</option>
@@ -464,7 +482,11 @@ export default {
                     </div>
                     <div class="form-group">
                         <label>分类</label>
-                        <input type="text" v-model="editCategory" class="form-input">
+                        <select v-model="editCategory" class="form-input">
+                            <option value="">未设置</option>
+                            <option v-for="c in productCategories" :key="c" :value="c">{{ c }}</option>
+                            <option v-if="editCategory && !productCategories.includes(editCategory)" :value="editCategory">{{ editCategory }}</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>站点</label>

@@ -908,7 +908,7 @@ app.get('/api/competitor/:id/monitor-records', async (req, res) => {
 app.patch('/api/product/:asin', async (req, res) => {
     try {
         const { asin } = req.params;
-        const { status, site } = req.body;
+        const { status, site, category } = req.body;
         const sets = [];
         const params = [];
         if (status !== undefined) {
@@ -922,6 +922,11 @@ app.patch('/api/product/:asin', async (req, res) => {
             }
             sets.push('seq = ?');
             params.push(siteVal);
+        }
+        if (category !== undefined) {
+            const categoryVal = category ? String(category).trim() : null;
+            sets.push('category = ?');
+            params.push(categoryVal);
         }
         if (!sets.length) return res.status(400).json({ error: '无更新字段' });
         sets.push('updated_at = NOW()');

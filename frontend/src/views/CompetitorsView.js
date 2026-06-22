@@ -103,7 +103,8 @@ export default {
             return '/competitors' + buildQuery(params);
         }
 
-        async function loadData() {
+        async function loadData(newPage) {
+            if (newPage != null) filters.value.page = newPage;
             loading.value = true;
             try {
                 const params = { ...filters.value };
@@ -147,11 +148,12 @@ export default {
 
         function goPage(p) {
             if (loading.value || p < 1 || p > totalPages.value || p === filters.value.page) return;
-            router.push(buildPageHref(p));
+            loadData(p);
+            window.history.replaceState(null, '', buildPageHref(p));
         }
 
         watch(
-            () => route.query,
+            () => route.fullPath,
             () => {
                 syncFiltersFromRoute();
                 loadData();
