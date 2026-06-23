@@ -223,7 +223,7 @@ export default {
                                 · 日期：{{ String(rant.rant_date || '').slice(0, 10) }}
                                 <span v-if="currentUser && rant.user_id === currentUser.id" style="color:var(--primary);">（我写的）</span>
                             </template>
-                            · 支持 Markdown，粘贴图片自动上传至外部图床
+                            · Support Markdown
                         </div>
                     </div>
                     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
