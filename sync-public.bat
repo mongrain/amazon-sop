@@ -25,11 +25,17 @@ if errorlevel 1 (
     echo public 无变更，跳过 commit。
 )
 
-git pull --rebase --autostash
+rem 本地有其他未提交文件时跳过 pull，避免 autostash 反复覆写文件触发前端热更新
+git diff --quiet
 if errorlevel 1 (
-    echo pull 失败，10 秒后重试...
-    timeout /t 10 /nobreak >nul
-    goto loop
+    echo 本地有其他未提交变更，跳过 pull，直接 push。
+) else (
+    git pull --rebase
+    if errorlevel 1 (
+        echo pull 失败，10 秒后重试...
+        timeout /t 10 /nobreak >nul
+        goto loop
+    )
 )
 
 git push
