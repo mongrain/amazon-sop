@@ -125,7 +125,7 @@ export default {
                             <td>
                                 <form @submit.prevent="resetPassword(u.id)" style="display:flex; gap:8px; align-items:center;">
                                     <input class="search-input" v-model="resetPasswords[u.id]" type="password" placeholder="新密码" minlength="4" required style="width:140px;">
-                                    <button class="btn-secondary" type="submit" style="padding:6px 12px; font-size:12px;">重置</button>
+                                    <button class="btn-secondary" type="submit" style="padding:4px 10px; font-size:11px;">重置</button>
                                 </form>
                             </td>
                             <td>

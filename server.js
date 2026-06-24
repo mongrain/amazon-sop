@@ -480,7 +480,7 @@ app.delete('/api/knowledge/draft', async (req, res) => {
     }
 });
 
-// ========== 每日吐槽 ==========
+// ========== 碎碎念 ==========
 
 app.post('/api/daily-rants/image', upload.single('image'), async (req, res) => {
     try {
@@ -844,11 +844,17 @@ app.post('/api/external/competitor-monitor', async (req, res) => {
         let actionText = null;
         if (previousRecord && previousRecord.image_url) {
             const previousImageUrl = normalizeMonitorImageUrl(previousRecord.image_url);
-            const compareResult = await compareStorefrontImages(previousImageUrl, imageUrl);
-            hasChange = compareResult.is_changed;
-            actionText = compareResult.summary || null;
-            if (actionText && actionText.length > 2000) {
-                actionText = actionText.slice(0, 2000);
+            try {
+                const compareResult = await compareStorefrontImages(previousImageUrl, imageUrl);
+                hasChange = compareResult.is_changed;
+                actionText = compareResult.summary || null;
+                if (actionText && actionText.length > 2000) {
+                    actionText = actionText.slice(0, 2000);
+                }
+            } catch (compareErr) {
+                console.warn('compareStorefrontImages 失败，按无修改处理:', compareErr.message || compareErr);
+                hasChange = false;
+                actionText = null;
             }
         }
 

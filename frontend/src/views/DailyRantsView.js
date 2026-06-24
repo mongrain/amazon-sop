@@ -83,15 +83,15 @@ export default {
     template: `<div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                     <div>
-                        <h1>每日吐槽</h1>
+                        <h1>碎碎念</h1>
                         <div class="page-desc">{{ isManager ? '记录每日心声，支持 Markdown；管理员可查看全员吐槽' : '记录每日心声，支持 Markdown；仅显示你自己的吐槽' }}</div>
                         <form @submit.prevent="search" class="search-form" style="margin-top:12px;">
                             <input type="text" v-model="keyword" class="search-input" :placeholder="isManager ? '搜索内容或作者' : '搜索内容'">
-                            <button type="submit" class="btn-secondary" style="padding:8px 16px;">搜索</button>
-                            <a v-if="keyword" href="javascript:void(0)" @click.prevent="resetSearch" class="btn-secondary" style="padding:8px 16px;">重置</a>
+                            <button type="submit" class="btn-secondary" style="padding:6px 12px;">搜索</button>
+                            <a v-if="keyword" href="javascript:void(0)" @click.prevent="resetSearch" class="btn-secondary" style="padding:6px 12px;">重置</a>
                         </form>
                     </div>
-                    <router-link to="/daily-rants/new" class="btn-primary">+ 写吐槽</router-link>
+                    <router-link to="/daily-rants/new" class="btn-primary">+ 来一句</router-link>
                 </div>
             </div>
             <div class="table-container">
@@ -112,7 +112,7 @@ export default {
                         </tr>
                         <tr v-else-if="!rants.length">
                             <td colspan="6" style="text-align:center; padding:40px; color:#999;">
-                                {{ keyword ? '未找到相关吐槽' : '暂无吐槽，点击右上角「写吐槽」开始' }}
+                                {{ keyword ? '未找到相关吐槽' : '暂无吐槽，点击右上角「来一句」开始' }}
                             </td>
                         </tr>
                         <tr v-for="rant in rants" :key="rant.id" class="product-row" @click="goRant(rant.id)">
@@ -132,8 +132,8 @@ export default {
                 </table>
             </div>
             <div v-if="totalPages > 1" style="display:flex; justify-content:center; gap:8px; margin-top:20px; align-items:center;">
-                <a v-if="page > 1" href="javascript:void(0)" @click.prevent="goPage(page - 1)" class="btn-secondary" style="padding:6px 14px;">上一页</a>
+                <a v-if="page > 1" href="javascript:void(0)" @click.prevent="goPage(page - 1)" class="btn-secondary" style="padding:4px 10px;">上一页</a>
                 <span style="font-size:13px; color:var(--text-secondary);">第 {{ page }} / {{ totalPages }} 页（共 {{ total }} 条）</span>
-                <a v-if="page < totalPages" href="javascript:void(0)" @click.prevent="goPage(page + 1)" class="btn-secondary" style="padding:6px 14px;">下一页</a>
+                <a v-if="page < totalPages" href="javascript:void(0)" @click.prevent="goPage(page + 1)" class="btn-secondary" style="padding:4px 10px;">下一页</a>
             </div>`
 };

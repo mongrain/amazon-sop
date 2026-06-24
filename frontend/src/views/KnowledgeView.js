@@ -87,8 +87,8 @@ export default {
                         <div class="page-desc">Write and save operational documents, support direct pasting of Word / Excel / table content</div>
                         <form @submit.prevent="search" class="search-form" style="margin-top:12px;">
                             <input type="text" v-model="keyword" class="search-input" placeholder="搜索标题或正文">
-                            <button type="submit" class="btn-secondary" style="padding:8px 16px;">搜索</button>
-                            <a v-if="keyword" href="javascript:void(0)" @click.prevent="resetSearch" class="btn-secondary" style="padding:8px 16px;">重置</a>
+                            <button type="submit" class="btn-secondary" style="padding:6px 12px;">搜索</button>
+                            <a v-if="keyword" href="javascript:void(0)" @click.prevent="resetSearch" class="btn-secondary" style="padding:6px 12px;">重置</a>
                         </form>
                     </div>
                     <a href="javascript:void(0)" class="btn-primary" @click.prevent="goNewKnowledgeDoc">+ 新建文档</a>
@@ -127,8 +127,8 @@ export default {
                 </table>
             </div>
             <div v-if="totalPages > 1" style="display:flex; justify-content:center; gap:8px; margin-top:20px; align-items:center;">
-                <a v-if="page > 1" href="javascript:void(0)" @click.prevent="goPage(page - 1)" class="btn-secondary" style="padding:6px 14px;">上一页</a>
+                <a v-if="page > 1" href="javascript:void(0)" @click.prevent="goPage(page - 1)" class="btn-secondary" style="padding:4px 10px;">上一页</a>
                 <span style="font-size:13px; color:var(--text-secondary);">第 {{ page }} / {{ totalPages }} 页（共 {{ total }} 篇）</span>
-                <a v-if="page < totalPages" href="javascript:void(0)" @click.prevent="goPage(page + 1)" class="btn-secondary" style="padding:6px 14px;">下一页</a>
+                <a v-if="page < totalPages" href="javascript:void(0)" @click.prevent="goPage(page + 1)" class="btn-secondary" style="padding:4px 10px;">下一页</a>
             </div>`
 };

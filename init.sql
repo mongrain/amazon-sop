@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 每日吐槽
+-- 碎碎念
 CREATE TABLE IF NOT EXISTS daily_rants (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,

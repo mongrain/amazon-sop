@@ -169,7 +169,7 @@ export default {
                         <template v-if="version.updated_at && version.updated_at !== version.created_at">　|　最后修改 {{ fmtDateTime(version.updated_at) }}</template>
                     </span>
                 </div>
-                <a :href="'/product/' + asin" class="btn-secondary" style="padding:6px 16px; font-size:13px;">返回当前版本</a>
+                <a :href="'/product/' + asin" class="btn-secondary" style="padding:4px 12px; font-size:12px;">返回当前版本</a>
             </div>
             <div class="sop-grid">
                 <div v-for="module in modules" :key="module.id" class="sop-card">

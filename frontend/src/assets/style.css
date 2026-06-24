@@ -324,14 +324,14 @@ body {
 .import-card h2 { margin-bottom: 12px; }
 .import-desc { color: var(--text-secondary); font-size: 14px; margin-bottom: 16px; }
 .import-note { font-size: 12px; color: var(--info); margin-bottom: 24px; background: #f5f7fa; padding: 8px 12px; border-radius: 4px; }
-.btn-primary { background: var(--primary); color: #fff; border: none; padding: 10px 32px; border-radius: 6px; font-size: 15px; cursor: pointer; transition: background 0.2s; }
+.btn-primary { background: var(--primary); color: #fff; border: none; padding: 8px 24px; border-radius: 6px; font-size: 14px; cursor: pointer; transition: background 0.2s; }
 .btn-primary:hover { background: #66b1ff; }
-.btn-large { padding: 14px 48px; font-size: 16px; }
-.btn-secondary { display: inline-block; padding: 8px 24px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; color: var(--text); text-decoration: none; transition: all 0.2s; }
+.btn-large { padding: 10px 32px; font-size: 15px; }
+.btn-secondary { display: inline-block; padding: 6px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text); text-decoration: none; transition: all 0.2s; }
 .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
-.btn-danger { display: inline-block; padding: 6px 16px; border: 1px solid var(--danger); border-radius: 6px; font-size: 13px; color: var(--danger); background: #fff; cursor: pointer; transition: all 0.2s; }
+.btn-danger { display: inline-block; padding: 4px 12px; border: 1px solid var(--danger); border-radius: 6px; font-size: 12px; color: var(--danger); background: #fff; cursor: pointer; transition: all 0.2s; }
 .btn-danger:hover { background: var(--danger); color: #fff; }
-.btn-sm { display: inline-block; padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; color: var(--text); text-decoration: none; }
+.btn-sm { display: inline-block; padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; color: var(--text); text-decoration: none; }
 .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
 .import-result { margin-top: 20px; padding: 24px; border-radius: 8px; }
 .import-result.success { background: #f0f9eb; border: 1px solid #e1f3d8; }
@@ -382,20 +382,20 @@ body {
     border-top: 1px solid var(--border);
 }
 .modal-footer .btn-cancel {
-    padding: 8px 20px; border: 1px solid var(--border); border-radius: 6px;
-    font-size: 14px; color: var(--text-secondary); background: #fff; cursor: pointer; transition: all 0.2s;
+    padding: 6px 16px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; color: var(--text-secondary); background: #fff; cursor: pointer; transition: all 0.2s;
 }
 .modal-footer .btn-cancel:hover { border-color: var(--primary); color: var(--primary); }
 .modal-footer .btn-submit {
-    padding: 8px 20px; background: var(--primary); color: #fff; border: none;
-    border-radius: 6px; font-size: 14px; cursor: pointer; transition: background 0.2s;
+    padding: 6px 16px; background: var(--primary); color: #fff; border: none;
+    border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.2s;
 }
 .modal-footer .btn-submit:hover { background: #66b1ff; }
 .modal-error { color: var(--danger); font-size: 13px; margin-top: 12px; text-align: center; }
 
 /* ========== SOP Template Edit ========== */
 #editModeBtn {
-    padding: 6px 16px; font-size: 13px;
+    padding: 4px 12px; font-size: 12px;
 }
 #editModeBtn.btn-danger {
     background: var(--danger);
@@ -418,8 +418,8 @@ body {
 }
 .btn-icon:hover { background: var(--danger); color: #fff; }
 .btn-add-item {
-    display: inline-block; margin-top: 8px; padding: 6px 14px; border: 1px dashed var(--primary);
-    border-radius: 6px; font-size: 13px; color: var(--primary); background: #fff;
+    display: inline-block; margin-top: 8px; padding: 4px 12px; border: 1px dashed var(--primary);
+    border-radius: 6px; font-size: 12px; color: var(--primary); background: #fff;
     cursor: pointer; transition: all 0.2s;
 }
 .btn-add-item:hover { background: #ecf5ff; border-style: solid; }
@@ -555,9 +555,9 @@ body {
 .pagination { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .page-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 34px; height: 34px; padding: 0 10px;
+    min-width: 30px; height: 30px; padding: 0 8px;
     border: 1px solid var(--border); border-radius: 6px;
-    font-size: 13px; color: var(--text); text-decoration: none;
+    font-size: 12px; color: var(--text); text-decoration: none;
     background: #fff; cursor: pointer; transition: all 0.15s;
     user-select: none;
 }

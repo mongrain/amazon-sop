@@ -39,7 +39,7 @@ export default {
         const saving = ref(false);
         const error = ref('');
 
-        const pageTitle = computed(() => isNew.value ? '写吐槽' : '每日吐槽');
+        const pageTitle = computed(() => isNew.value ? '来一句' : '碎碎念');
         const showEditor = computed(() => isNew.value || canEdit.value);
         const bodyClass = computed(() => (isNew.value || editMode.value) ? 'mode-edit' : 'mode-preview');
 
@@ -98,7 +98,7 @@ export default {
 
         async function saveRant() {
             if (!content.value.trim()) {
-                alert('请填写吐槽内容');
+                alert('请填来一句内容');
                 return;
             }
             saving.value = true;

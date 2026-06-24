@@ -424,9 +424,9 @@ export default {
                             <input type="date" v-model="filters.action_from" class="search-input" style="width:160px;" title="动作开始日期">
                             <span style="color:var(--text-secondary); font-size:13px;">至</span>
                             <input type="date" v-model="filters.action_to" class="search-input" style="width:160px;" title="动作结束日期">
-                            <button type="submit" class="btn-secondary" style="padding:8px 16px;">查询</button>
-                            <button type="button" class="btn-secondary" :class="{ 'active-filter-chip': actionPreset === 'week' }" :style="actionPreset === 'week' ? 'padding:8px 16px; background:rgba(64,158,255,0.12); border-color:var(--primary); color:var(--primary);' : 'padding:8px 16px;'" @click="applyWeekPreset">最近一周</button>
-                            <router-link v-if="hasAnyFilter" to="/competitors" class="btn-secondary" style="padding:8px 16px;">重置</router-link>
+                            <button type="submit" class="btn-secondary" style="padding:6px 12px;">查询</button>
+                            <button type="button" class="btn-secondary" :class="{ 'active-filter-chip': actionPreset === 'week' }" :style="actionPreset === 'week' ? 'padding:6px 12px; background:rgba(64,158,255,0.12); border-color:var(--primary); color:var(--primary);' : 'padding:6px 12px;'" @click="applyWeekPreset">最近一周</button>
+                            <router-link v-if="hasAnyFilter" to="/competitors" class="btn-secondary" style="padding:6px 12px;">重置</router-link>
                         </form>
                         <div v-if="hasActionDateFilter" style="margin-top:8px; font-size:13px; color:var(--text-secondary);">
                             当前筛选：{{ actionPreset === 'week' ? '最近一周有动作变化' : '指定时间段内有动作变化' }}
