@@ -1323,6 +1323,151 @@ function registerProtectedPageApi(app, ctx) {
             res.status(400).json({ error: e.message });
         }
     });
+
+    const { getGoogleTrendsBatch } = require('../service/google-trends');
+
+    app.post('/api/google-trends', async (req, res) => {
+        try {
+            const { keywords, interval, geo, force_refresh: forceRefresh } = req.body || {};
+            const data = await getGoogleTrendsBatch(keywords, { interval, geo, forceRefresh: Boolean(forceRefresh) });
+            res.json(data);
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    const amcAds = require('../service/amc-ads');
+
+    app.get('/api/amc/schemas', async (req, res) => {
+        try {
+            const schemas = await amcAds.listSchemas();
+            res.json({ schemas, fieldTypes: amcAds.FIELD_TYPES, aggThresholds: amcAds.AGG_THRESHOLDS });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/amc/schemas/:id', async (req, res) => {
+        try {
+            const schema = await amcAds.getSchemaById(Number(req.params.id));
+            if (!schema) return res.status(404).json({ error: 'Schema 不存在' });
+            res.json({ schema, fieldTypes: amcAds.FIELD_TYPES, aggThresholds: amcAds.AGG_THRESHOLDS });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/amc/schemas', async (req, res) => {
+        try {
+            const schema = await amcAds.createSchema(req.body || {});
+            res.json({ schema });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.put('/api/amc/schemas/:id', async (req, res) => {
+        try {
+            const schema = await amcAds.updateSchema(Number(req.params.id), req.body || {});
+            res.json({ schema });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.delete('/api/amc/schemas/:id', async (req, res) => {
+        try {
+            await amcAds.deleteSchema(Number(req.params.id));
+            res.json({ status: 'ok' });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/amc/schemas/:id/fields', async (req, res) => {
+        try {
+            const field = await amcAds.createField(Number(req.params.id), req.body || {});
+            res.json({ field });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.put('/api/amc/fields/:id', async (req, res) => {
+        try {
+            const field = await amcAds.updateField(Number(req.params.id), req.body || {});
+            res.json({ field });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.delete('/api/amc/fields/:id', async (req, res) => {
+        try {
+            await amcAds.deleteField(Number(req.params.id));
+            res.json({ status: 'ok' });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/amc/generate-sql', async (req, res) => {
+        try {
+            const data = await amcAds.generateSqlFromRequest(req.body || {});
+            res.json(data);
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/amc/sql-scripts', async (req, res) => {
+        try {
+            const page = Math.max(1, parseInt(req.query.page) || 1);
+            const pageSize = Math.min(50, Math.max(1, parseInt(req.query.page_size) || 20));
+            const data = await amcAds.listSqlScripts({ page, pageSize });
+            res.json(data);
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/amc/sql-scripts/version/:id', async (req, res) => {
+        try {
+            const script = await amcAds.getSqlScriptById(Number(req.params.id));
+            if (!script) return res.status(404).json({ error: '脚本不存在' });
+            res.json({ script });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.delete('/api/amc/sql-scripts/version/:id', async (req, res) => {
+        try {
+            await amcAds.deleteSqlVersion(Number(req.params.id));
+            res.json({ status: 'ok' });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/amc/sql-scripts/:groupId/versions', async (req, res) => {
+        try {
+            const versions = await amcAds.listSqlVersions(Number(req.params.groupId));
+            res.json({ versions });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/amc/sql-scripts', async (req, res) => {
+        try {
+            const userId = req.currentUser && req.currentUser.id;
+            const script = await amcAds.saveSqlScript(userId, req.body || {});
+            res.json({ script });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
 }
 
 module.exports = { registerPublicPageApi, registerProtectedPageApi };

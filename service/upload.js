@@ -82,6 +82,7 @@ function buildUploadHeaders(uploadUrl, cookie) {
         referer: 'https://www.sellersprite.com/cn/bbs'
     };
     if (cookie) headers.cookie = cookie;
+    console.log(headers);
     return headers;
 }
 

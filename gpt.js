@@ -32,6 +32,10 @@ async function compareStorefrontImages(imageUrlA, imageUrlB) {
         stream: false
     };
 
+    console.log('GPT_API_URL', GPT_API_URL);
+    console.log('GPT_API_KEY', GPT_API_KEY);
+    console.log('payload', payload);
+
     const response = await axios.post(GPT_API_URL, payload, {
         headers: {
             Authorization: `Bearer ${GPT_API_KEY}`,

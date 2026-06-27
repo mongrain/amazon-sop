@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { parseGptJsonContent, compareStorefrontImages, chatCompletionJson } = require('./gpt');
+const { parseGptJsonContent, compareStorefrontImages, chatCompletionJson } = require('../gpt');
 
 let passed = 0;
 let failed = 0;

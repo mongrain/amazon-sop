@@ -426,6 +426,74 @@ async function initDb() {
         if (!isSafeMigrationError(e)) {}
     }
 
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS amc_schemas (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            translation VARCHAR(255) DEFAULT '',
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_name (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query("ALTER TABLE amc_schemas ADD COLUMN translation VARCHAR(255) DEFAULT '' AFTER name");
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS amc_schema_fields (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            schema_id INT NOT NULL,
+            amazon_field VARCHAR(255) NOT NULL,
+            translation VARCHAR(255) DEFAULT '',
+            field_type VARCHAR(50) NOT NULL DEFAULT 'string',
+            description TEXT,
+            agg_threshold VARCHAR(20) NOT NULL DEFAULT 'NONE',
+            sort_order INT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_schema_sort (schema_id, sort_order),
+            FOREIGN KEY (schema_id) REFERENCES amc_schemas(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS amc_sql_scripts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            group_id INT NOT NULL,
+            version INT NOT NULL DEFAULT 1,
+            name VARCHAR(255) NOT NULL,
+            sql_content LONGTEXT NOT NULL,
+            schema_id INT DEFAULT NULL,
+            selected_fields JSON DEFAULT NULL,
+            note TEXT,
+            created_by INT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_group_version (group_id, version),
+            INDEX idx_created (created_at),
+            FOREIGN KEY (schema_id) REFERENCES amc_schemas(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            "ALTER TABLE amc_schema_fields MODIFY COLUMN agg_threshold VARCHAR(20) NOT NULL DEFAULT 'NONE'"
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
     // Add composite indexes that match the hot query paths.
     try {
         await p.query('ALTER TABLE sop_items ADD INDEX idx_module_sort (module_id, sort_order)');

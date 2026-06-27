@@ -361,7 +361,7 @@ export default {
                         <router-link to="/dashboard" class="back-link">&larr; 返回看板</router-link>
                         <h1>{{ product.name || product.asin }}</h1>
                         <div class="product-meta mt-1.5">
-                            <span class="meta-item">ASIN: <code>{{ product.asin }}</code></span>
+                            <span class="meta-item">ASIN: <a :href="'https://www.amazon.com/dp/' + product.asin" target="_blank"><code>{{ product.asin }}</code></a></span>
                             <span class="meta-item">分类:
                                 <select class="status-select px-2 py-0.5 text-xs" :value="product.category || ''" @change="updateProductCategory($event.target.value)">
                                     <option value="">未设置</option>
