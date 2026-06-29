@@ -55,7 +55,7 @@ export default {
         const versions = ref([]);
         const versionsLoading = ref(false);
 
-        const statusOptions = ['待处理', '进行中', '已完成', '跳过'];
+        const statusOptions = ['待处理', '进行中', '已完成', '跳过', '已放弃'];
 
         const overallProgress = computed(() => {
             let completed = 0, total = 0;

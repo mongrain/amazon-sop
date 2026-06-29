@@ -17,6 +17,8 @@ const {
 } = require('./database');
 const { importExcel, EXCEL_PATH } = require('./importer');
 const { importTacosExcel, TACOS_PATH } = require('./tacos-importer');
+const { importProductListExcel, PRODUCT_LIST_PATH } = require('./product-list-importer');
+const { importInventoryReportTxt, INVENTORY_REPORT_PATH } = require('./inventory-report-importer');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
 const { compareStorefrontImages } = require('./gpt');
@@ -85,6 +87,10 @@ function getPageApiCtx() {
         EXCEL_PATH,
         importTacosExcel,
         TACOS_PATH,
+        importProductListExcel,
+        PRODUCT_LIST_PATH,
+        importInventoryReportTxt,
+        INVENTORY_REPORT_PATH,
         hashPassword,
         verifyPassword,
         destroySession,
@@ -1579,7 +1585,19 @@ app.get('*', (req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
+    if (err && err.name === 'MulterError') {
+        const msg = err.code === 'LIMIT_FILE_SIZE'
+            ? '上传文件过大，请压缩后重试或拆分导出'
+            : (err.message || '文件上传失败');
+        if (req.path.startsWith('/api')) {
+            return res.status(400).json({ error: msg });
+        }
+        return res.status(400).send(msg);
+    }
     if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+        if (req.path.startsWith('/api')) {
+            return res.status(413).json({ error: '提交内容过大，请精简后重试' });
+        }
         return res.status(413).send('提交内容过大，请精简后重试（单月「开展时需要做什么」最多 20000 字符）');
     }
     console.error('Unhandled error:', err);

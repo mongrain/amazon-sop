@@ -24,6 +24,7 @@ defineEmits(['logout']);
             <router-link to="/product-selection" :class="{ active: active === 'product_selection' }">选品分析</router-link>
             <router-link to="/google-trends" :class="{ active: active === 'google_trends' }">Google Trends</router-link>
             <router-link to="/amc-ads" :class="{ active: active === 'amc_ads' }">AMC 广告</router-link>
+            <router-link to="/product-elimination" :class="{ active: active === 'product_elimination' }">产品淘汰分析</router-link>
             <router-link to="/knowledge" :class="{ active: active === 'knowledge' }">知识库</router-link>
             <router-link to="/sop" :class="{ active: active === 'sop' }">SOP模板</router-link>
             <router-link to="/import" :class="{ active: active === 'import' }">导入数据</router-link>

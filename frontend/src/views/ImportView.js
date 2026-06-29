@@ -8,22 +8,34 @@ export default {
         const router = useRouter();
         const route = useRoute();
         const importPath = ref('');
+        const productListPath = ref('');
         const tacosPath = ref('');
+        const inventoryPath = ref('');
         const result = ref(null);
+        const productListResult = ref(null);
         const tacosResult = ref(null);
+        const inventoryResult = ref(null);
         const importing = ref(false);
+        const importingProductList = ref(false);
         const importingTacos = ref(false);
+        const importingInventory = ref(false);
         const error = ref('');
+        const productListError = ref('');
         const tacosError = ref('');
+        const inventoryError = ref('');
 
         onMounted(async () => {
             try {
-                const [sopRes, tacosRes] = await Promise.all([
+                const [sopRes, productListRes, tacosRes, inventoryRes] = await Promise.all([
                     http.get('/api/import'),
-                    http.get('/api/import/tacos')
+                    http.get('/api/import/product-list'),
+                    http.get('/api/import/tacos'),
+                    http.get('/api/import/inventory-report')
                 ]);
                 importPath.value = sopRes.data.import_path || '';
+                productListPath.value = productListRes.data.import_path || '';
                 tacosPath.value = tacosRes.data.import_path || '';
+                inventoryPath.value = inventoryRes.data.import_path || '';
             } catch (e) { /* ignore */ }
         });
 
@@ -41,6 +53,20 @@ export default {
             }
         }
 
+        async function startProductListImport() {
+            productListError.value = '';
+            importingProductList.value = true;
+            productListResult.value = null;
+            try {
+                const { data } = await http.post('/api/import/product-list');
+                productListResult.value = data.result || data;
+            } catch (e) {
+                productListError.value = getApiError(e, '导入失败');
+            } finally {
+                importingProductList.value = false;
+            }
+        }
+
         async function startTacosImport() {
             tacosError.value = '';
             importingTacos.value = true;
@@ -55,10 +81,26 @@ export default {
             }
         }
 
+        async function startInventoryImport() {
+            inventoryError.value = '';
+            importingInventory.value = true;
+            inventoryResult.value = null;
+            try {
+                const { data } = await http.post('/api/import/inventory-report');
+                inventoryResult.value = data.result || data;
+            } catch (e) {
+                inventoryError.value = getApiError(e, '导入失败');
+            } finally {
+                importingInventory.value = false;
+            }
+        }
+
         return {
-            importPath, tacosPath, result, tacosResult,
-            importing, importingTacos, error, tacosError,
-            startImport, startTacosImport
+            importPath, productListPath, tacosPath, inventoryPath,
+            result, productListResult, tacosResult, inventoryResult,
+            importing, importingProductList, importingTacos, importingInventory,
+            error, productListError, tacosError, inventoryError,
+            startImport, startProductListImport, startTacosImport, startInventoryImport
         };
     },
     template: `<div class="page-header">
@@ -104,6 +146,62 @@ export default {
                             <h4>部分错误:</h4>
                             <ul>
                                 <li v-for="(err, i) in result.errors.slice(0, 10)" :key="i">{{ err }}</li>
+                            </ul>
+                        </div>
+                        <router-link to="/dashboard" class="btn-secondary">查看产品看板</router-link>
+                    </template>
+                </div>
+
+                <div class="import-card" style="margin-top:24px;">
+                    <h2>从产品清单导入</h2>
+                    <p class="import-desc">
+                        系统将读取 <code>public/产品清单.xlsx</code> 中的站点与产品名称，<br>
+                        更新或新建产品库记录。若 ASIN 重复，以表格中<strong>最后一行</strong>为准。
+                    </p>
+                    <p v-if="productListPath" class="import-note">
+                        Excel文件路径: <code>{{ productListPath }}</code>
+                    </p>
+                    <button type="button" class="btn-primary btn-large" @click="startProductListImport" :disabled="importingProductList">
+                        {{ importingProductList ? '导入中…' : '导入产品清单' }}
+                    </button>
+                </div>
+
+                <div v-if="productListError" class="import-result error">
+                    <h3>产品清单导入失败</h3>
+                    <p>{{ productListError }}</p>
+                </div>
+                <div v-if="productListResult" class="import-result" :class="productListResult.error ? 'error' : 'success'">
+                    <template v-if="productListResult.error">
+                        <h3>产品清单导入失败</h3>
+                        <p>{{ productListResult.error }}</p>
+                    </template>
+                    <template v-else>
+                        <h3>产品清单导入完成</h3>
+                        <div class="result-stats">
+                            <div class="result-stat">
+                                <span class="result-number">{{ productListResult.products_updated }}</span>
+                                <span class="result-label">产品更新</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ productListResult.products_created }}</span>
+                                <span class="result-label">新建产品</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ productListResult.products_unchanged }}</span>
+                                <span class="result-label">无变化</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ productListResult.unique_asin }}</span>
+                                <span class="result-label">唯一 ASIN</span>
+                            </div>
+                        </div>
+                        <p v-if="productListResult.total_rows > productListResult.unique_asin" class="import-note" style="margin-top:12px;">
+                            共 {{ productListResult.total_rows }} 行数据，{{ productListResult.total_rows - productListResult.unique_asin }} 行重复 ASIN 已按最后一行覆盖
+                        </p>
+                        <div v-if="productListResult.errors && productListResult.errors.length" class="result-errors">
+                            <h4>部分错误:</h4>
+                            <ul>
+                                <li v-for="(err, i) in productListResult.errors.slice(0, 10)" :key="i">{{ err }}</li>
                             </ul>
                         </div>
                         <router-link to="/dashboard" class="btn-secondary">查看产品看板</router-link>
@@ -159,6 +257,66 @@ export default {
                             <h4>部分错误:</h4>
                             <ul>
                                 <li v-for="(err, i) in tacosResult.errors.slice(0, 10)" :key="i">{{ err }}</li>
+                            </ul>
+                        </div>
+                        <router-link to="/dashboard" class="btn-secondary">查看产品看板</router-link>
+                    </template>
+                </div>
+
+                <div class="import-card" style="margin-top:24px;">
+                    <h2>从商品库存报告导入</h2>
+                    <p class="import-desc">
+                        系统将读取 <code>public/商品库存报告.txt</code>（Amazon 库存报告 TSV），<br>
+                        按 <code>open-date</code> 更新产品库中的<strong>创建时间</strong>；不存在的产品将自动新建。
+                    </p>
+                    <p v-if="inventoryPath" class="import-note">
+                        文件路径: <code>{{ inventoryPath }}</code>
+                    </p>
+                    <button type="button" class="btn-primary btn-large" @click="startInventoryImport" :disabled="importingInventory">
+                        {{ importingInventory ? '导入中…' : '导入库存报告' }}
+                    </button>
+                </div>
+
+                <div v-if="inventoryError" class="import-result error">
+                    <h3>库存报告导入失败</h3>
+                    <p>{{ inventoryError }}</p>
+                </div>
+                <div v-if="inventoryResult" class="import-result" :class="inventoryResult.error ? 'error' : 'success'">
+                    <template v-if="inventoryResult.error">
+                        <h3>库存报告导入失败</h3>
+                        <p>{{ inventoryResult.error }}</p>
+                    </template>
+                    <template v-else>
+                        <h3>库存报告导入完成</h3>
+                        <div class="result-stats">
+                            <div class="result-stat">
+                                <span class="result-number">{{ inventoryResult.created_at_updated }}</span>
+                                <span class="result-label">创建时间更新</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ inventoryResult.products_created }}</span>
+                                <span class="result-label">新建产品</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ inventoryResult.products_updated }}</span>
+                                <span class="result-label">产品更新</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ inventoryResult.status_set_abandoned || 0 }}</span>
+                                <span class="result-label">标记已放弃</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ inventoryResult.unique_asin }}</span>
+                                <span class="result-label">唯一 ASIN</span>
+                            </div>
+                        </div>
+                        <p v-if="inventoryResult.skipped_no_date" class="import-note" style="margin-top:12px;">
+                            {{ inventoryResult.skipped_no_date }} 个 ASIN 因无法解析 open-date 已跳过
+                        </p>
+                        <div v-if="inventoryResult.errors && inventoryResult.errors.length" class="result-errors">
+                            <h4>部分错误:</h4>
+                            <ul>
+                                <li v-for="(err, i) in inventoryResult.errors.slice(0, 10)" :key="i">{{ err }}</li>
                             </ul>
                         </div>
                         <router-link to="/dashboard" class="btn-secondary">查看产品看板</router-link>

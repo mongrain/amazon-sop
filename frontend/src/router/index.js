@@ -26,6 +26,7 @@ import ProductVersionView from '@/views/ProductVersionView.js';
 import ProductSelectionView from '@/views/ProductSelectionView.js';
 import GoogleTrendsView from '@/views/GoogleTrendsView.js';
 import AmcAdsView from '@/views/AmcAdsView.js';
+import ProductEliminationView from '@/views/ProductEliminationView.js';
 
 const layoutChildren = [
     { path: '', redirect: '/dashboard' },
@@ -43,6 +44,7 @@ const layoutChildren = [
     { path: 'product-selection', name: 'product-selection', component: ProductSelectionView, meta: { active: 'product_selection', title: '选品分析' } },
     { path: 'google-trends', name: 'google-trends', component: GoogleTrendsView, meta: { active: 'google_trends', title: 'Google Trends' } },
     { path: 'amc-ads', name: 'amc-ads', component: AmcAdsView, meta: { active: 'amc_ads', title: 'AMC 广告' } },
+    { path: 'product-elimination', name: 'product-elimination', component: ProductEliminationView, meta: { active: 'product_elimination', title: '产品淘汰分析' } },
     { path: 'users', name: 'users', component: UsersView, meta: { active: 'users', title: '人员管理' } },
     { path: 'sprints', name: 'sprints', component: SprintsView, meta: { active: 'sprints', title: '冲刺项目' } },
     { path: 'sprints/new', name: 'sprints-new', component: SprintFormView, meta: { active: 'sprints', title: '新建冲刺项目' } },
