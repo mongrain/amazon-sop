@@ -39,7 +39,7 @@ export default {
         const moduleProgress = ref({});
         const collapsedGroups = ref({});
         const expandedInstructions = ref(new Set());
-        const statusOptions = ['待处理', '进行中', '已完成', '跳过'];
+        const statusOptions = ['待处理', '进行中', '已完成', '跳过', '已放弃'];
 
         const overallProgress = computed(() => {
             let completed = 0, total = 0;

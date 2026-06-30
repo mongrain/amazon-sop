@@ -13,7 +13,7 @@ export default {
         const products = ref([]);
         const modules = ref([]);
         const categories = ref([]);
-        const stats = ref({ total: 0, '待处理': 0, '进行中': 0, '已完成': 0, '跳过': 0 });
+        const stats = ref({ total: 0, '待处理': 0, '进行中': 0, '已完成': 0, '跳过': 0, '已放弃': 0 });
         const filters = reactive({ search: '', category: '', status: '' });
         const page = ref(1);
         const pageSize = ref(15);
@@ -176,6 +176,7 @@ export default {
                             <option value="进行中">进行中</option>
                             <option value="已完成">已完成</option>
                             <option value="跳过">跳过</option>
+                            <option value="已放弃">已放弃</option>
                         </select>
                         <button type="submit" class="btn-sm" style="display:none">搜索</button>
                     </form>

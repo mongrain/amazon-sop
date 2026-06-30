@@ -79,6 +79,10 @@ function registerProtectedPageApi(app, ctx) {
         EXCEL_PATH,
         importTacosExcel,
         TACOS_PATH,
+        importProductListExcel,
+        PRODUCT_LIST_PATH,
+        importInventoryReportTxt,
+        INVENTORY_REPORT_PATH,
         hashPassword,
         verifyPassword,
         destroySession,
@@ -174,7 +178,7 @@ function registerProtectedPageApi(app, ctx) {
                 `SELECT status, COUNT(*) AS cnt FROM products WHERE ${whereSql} GROUP BY status`,
                 filterParams
             );
-            const stats = { total, '待处理': 0, '进行中': 0, '已完成': 0, '跳过': 0 };
+            const stats = { total, '待处理': 0, '进行中': 0, '已完成': 0, '跳过': 0, '已放弃': 0 };
             for (const r of statRows) {
                 if (r.status && Object.prototype.hasOwnProperty.call(stats, r.status)) {
                     stats[r.status] = r.cnt;
@@ -182,7 +186,7 @@ function registerProtectedPageApi(app, ctx) {
             }
 
             let products = await queryAll(
-                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY created_at ASC LIMIT ? OFFSET ?`,
+                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY (status = '已放弃') ASC, created_at ASC LIMIT ? OFFSET ?`,
                 [...filterParams, pageSize, offset]
             );
 
@@ -387,6 +391,32 @@ function registerProtectedPageApi(app, ctx) {
         try {
             const result = await importTacosExcel();
             res.json({ import_path: TACOS_PATH, result });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/import/product-list', (req, res) => {
+        res.json({ import_path: PRODUCT_LIST_PATH, result: null });
+    });
+
+    app.post('/api/import/product-list', async (req, res) => {
+        try {
+            const result = await importProductListExcel();
+            res.json({ import_path: PRODUCT_LIST_PATH, result });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/import/inventory-report', (req, res) => {
+        res.json({ import_path: INVENTORY_REPORT_PATH, result: null });
+    });
+
+    app.post('/api/import/inventory-report', async (req, res) => {
+        try {
+            const result = await importInventoryReportTxt();
+            res.json({ import_path: INVENTORY_REPORT_PATH, result });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
@@ -1464,6 +1494,68 @@ function registerProtectedPageApi(app, ctx) {
             const userId = req.currentUser && req.currentUser.id;
             const script = await amcAds.saveSqlScript(userId, req.body || {});
             res.json({ script });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    const multer = require('multer');
+    const fs = require('fs');
+    const path = require('path');
+    const ELIMINATION_MAX_FILE_MB = 50;
+    const eliminationUpload = multer({
+        storage: multer.memoryStorage(),
+        limits: { fileSize: ELIMINATION_MAX_FILE_MB * 1024 * 1024 }
+    });
+    const {
+        analyzeProductElimination,
+        SAMPLE_ORDER_FILE,
+        SAMPLE_EXCEL_FILE,
+        IMPORT_FORMAT
+    } = require('../service/product-elimination');
+
+    function eliminationUploadMiddleware(req, res, next) {
+        eliminationUpload.single('file')(req, res, (err) => {
+            if (!err) return next();
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({
+                    error: `文件过大，请上传小于 ${ELIMINATION_MAX_FILE_MB}MB 的订单文件`
+                });
+            }
+            return res.status(400).json({ error: err.message || '文件上传失败' });
+        });
+    }
+
+    app.post('/api/product-elimination/analyze', eliminationUploadMiddleware, async (req, res) => {
+        try {
+            let input = {};
+            if (req.file && req.file.buffer) {
+                input = { buffer: req.file.buffer, sourceFile: req.file.originalname };
+            } else if (Array.isArray(req.body?.rows)) {
+                input = { rows: req.body.rows };
+            } else {
+                return res.status(400).json({ error: '请上传订单文件（Amazon TXT / 领星 Excel，字段名 file）或在 body 中提供 rows 数组' });
+            }
+            const data = await analyzeProductElimination(input, ctx);
+            res.json(data);
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/product-elimination/analyze-sample', async (req, res) => {
+        try {
+            const format = String(req.body?.format || req.query?.format || IMPORT_FORMAT.AMAZON_TXT).toLowerCase();
+            const sampleFile = format === IMPORT_FORMAT.LINGXING_EXCEL || format === 'excel'
+                ? SAMPLE_EXCEL_FILE
+                : SAMPLE_ORDER_FILE;
+            const filePath = path.join(__dirname, '..', 'public', sampleFile);
+            if (!fs.existsSync(filePath)) {
+                return res.status(404).json({ error: `示例文件 ${sampleFile} 不存在` });
+            }
+            const buffer = fs.readFileSync(filePath);
+            const data = await analyzeProductElimination({ buffer, sourceFile: sampleFile }, ctx);
+            res.json(data);
         } catch (e) {
             res.status(400).json({ error: e.message });
         }
