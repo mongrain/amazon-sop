@@ -137,18 +137,46 @@ export default {
             verifyFile.value = e.target.files && e.target.files[0] ? e.target.files[0] : null;
         }
 
+        async function sendToAiOffice() {
+            if (!ticket.value) return;
+            error.value = '';
+            busy.value = 'ai-office';
+            try {
+                const { data } = await http.post('/api/ai-office/tasks', {
+                    title: `工单 #${ticketId.value}: ${ticket.value.ticket_type}`,
+                    description: [ticket.value.trigger_reason, ticket.value.design_request].filter(Boolean).join('\n\n'),
+                    assigned_agent_code: 'boss',
+                    context_json: {
+                        source: 'ticket',
+                        id: Number(ticketId.value),
+                        asin: ticket.value.asin
+                    }
+                });
+                router.push('/ai-office/tasks/' + data.task.id);
+            } catch (e) {
+                error.value = getApiError(e, '提交 AI 办公室失败');
+            } finally {
+                busy.value = '';
+            }
+        }
+
         onMounted(loadTicket);
 
         return {
             ticket, users, error, assignForm, statusForm, designForm, verifyForm,
             busy, STATUS_OPTIONS, saveAssign, updateStatus, submitDesignRequest,
-            uploadDesignAsset, submitVerify, onDesignFileChange, onVerifyFileChange
+            uploadDesignAsset, submitVerify, onDesignFileChange, onVerifyFileChange, sendToAiOffice
         };
     },
     template: `<router-link to="/tickets" class="back-link">← 返回工单看板</router-link>
             <div class="page-header">
                 <h1>工单详情</h1>
                 <div v-if="ticket" class="page-desc">ID：{{ ticket.id }} · ASIN：<code>{{ ticket.asin }}</code> · 类型：{{ ticket.ticket_type }} · 等级：{{ ticket.severity || '-' }}</div>
+                <div v-if="ticket" style="margin-top:10px;">
+                    <button type="button" class="btn-secondary" :disabled="busy === 'ai-office'" @click="sendToAiOffice">
+                        {{ busy === 'ai-office' ? '提交中...' : '交给 AI 办公室' }}
+                    </button>
+                </div>
             </div>
 
             <div v-if="error" style="background:#fef0f0; border:1px solid #fde2e2; color:#f56c6c; padding:12px 16px; border-radius:8px; margin-bottom:16px;">

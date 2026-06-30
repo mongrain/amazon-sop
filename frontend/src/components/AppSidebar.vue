@@ -18,6 +18,7 @@ defineEmits(['logout']);
             <router-link to="/metrics/manual" :class="{ active: active === 'metrics' }">每日填报</router-link>
             <router-link to="/daily-rants" :class="{ active: active === 'daily_rants' }">碎碎念</router-link>
             <router-link to="/tickets" :class="{ active: active === 'tickets' }">工单看板</router-link>
+            <router-link to="/ai-office" :class="{ active: active === 'ai_office' }">AI 办公室</router-link>
             <router-link to="/annual-activities" :class="{ active: active === 'annual_activities' }">年度活动</router-link>
             <router-link to="/users" :class="{ active: active === 'users' }">人员管理</router-link>
             <router-link to="/competitors" :class="{ active: active === 'competitors' }">竞品库</router-link>

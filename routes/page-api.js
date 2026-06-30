@@ -1468,6 +1468,57 @@ function registerProtectedPageApi(app, ctx) {
             res.status(400).json({ error: e.message });
         }
     });
+
+    const aiOffice = require('../service/ai-office');
+    const { dispatchAiOfficeTask } = require('../orchestration/ai-office/index');
+
+    app.get('/api/ai-office/agents', async (req, res) => {
+        try {
+            const agents = await aiOffice.listAgents();
+            res.json({ agents });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/ai-office/tasks', async (req, res) => {
+        try {
+            const tasks = await aiOffice.listTasks({
+                status: req.query.status || '',
+                agent_id: req.query.agent_id || ''
+            });
+            res.json({ tasks });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/ai-office/tasks', async (req, res) => {
+        try {
+            const task = await aiOffice.createTask({
+                title: req.body.title,
+                description: req.body.description,
+                assigned_agent_code: req.body.assigned_agent_code,
+                priority: req.body.priority || 'NORMAL',
+                context_json: req.body.context_json || { source: 'manual' },
+                created_by: req.currentUser.id
+            });
+            dispatchAiOfficeTask(task.id);
+            res.json({ task });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/ai-office/tasks/:id', async (req, res) => {
+        try {
+            const data = await aiOffice.getTaskDetail(Number(req.params.id));
+            if (!data) return res.status(404).json({ error: '任务不存在' });
+            res.json(data);
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
 }
 
 module.exports = { registerPublicPageApi, registerProtectedPageApi };

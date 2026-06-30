@@ -535,6 +535,79 @@ async function initDb() {
     } catch (e) {
         // Silently skip migration errors
     }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS ai_agents (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            code VARCHAR(32) NOT NULL UNIQUE,
+            name VARCHAR(64) NOT NULL,
+            avatar_emoji VARCHAR(8) DEFAULT NULL,
+            role_description TEXT,
+            system_prompt TEXT,
+            status ENUM('idle','busy','reviewing') DEFAULT 'idle',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        await p.query(`CREATE TABLE IF NOT EXISTS ai_office_tasks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(200) NOT NULL,
+            description TEXT,
+            context_json JSON DEFAULT NULL,
+            created_by INT DEFAULT NULL,
+            assigned_agent_id INT DEFAULT NULL,
+            parent_task_id INT DEFAULT NULL,
+            status ENUM('QUEUED','IN_PROGRESS','PENDING_REVIEW','DONE','REJECTED','FAILED') DEFAULT 'QUEUED',
+            priority ENUM('LOW','NORMAL','HIGH') DEFAULT 'NORMAL',
+            input_payload JSON DEFAULT NULL,
+            output_markdown LONGTEXT DEFAULT NULL,
+            review_comment TEXT DEFAULT NULL,
+            error_message TEXT DEFAULT NULL,
+            retry_count INT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            completed_at DATETIME DEFAULT NULL,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (assigned_agent_id) REFERENCES ai_agents(id) ON DELETE SET NULL,
+            FOREIGN KEY (parent_task_id) REFERENCES ai_office_tasks(id) ON DELETE CASCADE,
+            INDEX idx_status (status),
+            INDEX idx_parent (parent_task_id),
+            INDEX idx_agent (assigned_agent_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        await p.query(`CREATE TABLE IF NOT EXISTS ai_office_task_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            task_id INT NOT NULL,
+            agent_id INT DEFAULT NULL,
+            log_type ENUM('system','agent','review') DEFAULT 'system',
+            content TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES ai_office_tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (agent_id) REFERENCES ai_agents(id) ON DELETE SET NULL,
+            INDEX idx_task (task_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) console.error('AI Office migration error:', e);
+    }
+
+    try {
+        const agentRows = await p.query('SELECT COUNT(*) as cnt FROM ai_agents', { type: QueryTypes.SELECT });
+        if (agentRows[0].cnt === 0) {
+            const agents = [
+                ['boss', '老板', '👔', '拆解任务、定优先级、自动分派', '你是 Amazon 运营团队的老板。收到任务后，将其拆解为可执行的子任务，并指定由 designer、analyst、researcher 中的谁负责。\n必须直接返回 JSON，不要 Markdown 标记。格式：\n{"subtasks":[{"title":"子任务标题","description":"详细说明","agent_code":"designer|analyst|researcher"}]}'],
+                ['supervisor', '主管', '📋', '审核所有 AI 产出', '你是 Amazon 运营团队的主管。审核下属 AI 的工作产出，判断是否符合要求。\n必须直接返回 JSON：{"approved":true/false,"comment":"审核意见"}'],
+                ['designer', '设计', '🎨', 'Listing 视觉、素材方案', '你是 Amazon Listing 设计专家。根据任务描述输出 Markdown 格式的视觉方案或素材建议，结构清晰、可执行。'],
+                ['analyst', '数据分析', '📊', '指标解读、趋势复盘', '你是 Amazon 数据分析专家。根据任务描述输出 Markdown 格式的数据分析报告，包含关键结论与建议。'],
+                ['researcher', '竞品调研', '🔍', '竞品分析、选品洞察', '你是 Amazon 竞品调研专家。根据任务描述输出 Markdown 格式的竞品/市场分析报告，包含可行动洞察。']
+            ];
+            for (const [code, name, emoji, desc, prompt] of agents) {
+                await p.query(
+                    'INSERT INTO ai_agents (code, name, avatar_emoji, role_description, system_prompt) VALUES (?, ?, ?, ?, ?)',
+                    buildQueryOptions([code, name, emoji, desc, prompt])
+                );
+            }
+        }
+    } catch (e) {
+        if (!isSafeMigrationError(e)) console.error('AI Office seed error:', e);
+    }
 }
 
 /**

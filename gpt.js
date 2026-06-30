@@ -89,4 +89,36 @@ async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL }
     return parseGptJsonContent(content);
 }
 
-module.exports = { compareStorefrontImages, parseGptJsonContent, chatCompletionJson };
+async function chatCompletionText(systemPrompt, userContent, { model = GPT_MODEL } = {}) {
+    const payload = {
+        model,
+        messages: [
+            { role: 'user', content: `${systemPrompt}\n\n${userContent}` }
+        ],
+        stream: false
+    };
+
+    const response = await axios.post(GPT_API_URL, payload, {
+        headers: {
+            Authorization: `Bearer ${GPT_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        maxBodyLength: Infinity,
+        timeout: Number(process.env.GPT_TIMEOUT_MS || 120000)
+    });
+
+    const data = response.data;
+    if (data && data.code !== undefined && data.code !== 0) {
+        throw new Error(data.message || 'GPT 请求失败');
+    }
+
+    const content = data && data.choices && data.choices[0]
+        ? data.choices[0].message && data.choices[0].message.content
+        : null;
+    if (!content) {
+        throw new Error('GPT 返回内容为空');
+    }
+    return String(content).trim();
+}
+
+module.exports = { compareStorefrontImages, parseGptJsonContent, chatCompletionJson, chatCompletionText };

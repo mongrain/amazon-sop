@@ -1,4 +1,5 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { getApiError, getMarkdownIt, http } from '@/utils/index.js';
 import DOMPurify from 'dompurify';
 
@@ -14,6 +15,7 @@ const POLL_INTERVAL_MS = 3000;
 export default {
     name: 'ProductSelectionView',
     setup() {
+        const router = useRouter();
         const error = ref('');
         const submitting = ref(false);
         const currentAnalysis = ref(null);
@@ -125,6 +127,27 @@ export default {
             }
         }
 
+        async function sendToAiOffice() {
+            if (!currentAnalysis.value || currentAnalysis.value.status !== 'COMPLETED') return;
+            error.value = '';
+            try {
+                const a = currentAnalysis.value;
+                const { data } = await http.post('/api/ai-office/tasks', {
+                    title: `选品分析 #${a.id}: ${a.asin}`,
+                    description: a.report || '',
+                    assigned_agent_code: 'boss',
+                    context_json: {
+                        source: 'product_selection',
+                        id: a.id,
+                        asin: a.asin
+                    }
+                });
+                router.push('/ai-office/tasks/' + data.task.id);
+            } catch (e) {
+                error.value = getApiError(e, '提交 AI 办公室失败');
+            }
+        }
+
         onMounted(loadHistory);
         onUnmounted(stopPolling);
 
@@ -140,6 +163,7 @@ export default {
             reportHtml,
             submitAnalysis,
             viewHistoryItem,
+            sendToAiOffice,
             STATUS_LABELS
         };
     },
@@ -222,6 +246,9 @@ export default {
                                 <p class="selection-processing-hint">系统会自动刷新状态，无需手动操作</p>
                             </div>
                             <div v-else-if="currentAnalysis.status === 'COMPLETED' && reportHtml" class="selection-report markdown-body" v-html="reportHtml"></div>
+                            <div v-if="currentAnalysis.status === 'COMPLETED'" style="margin-top:12px;">
+                                <button type="button" class="btn-secondary" @click="sendToAiOffice">交给 AI 办公室</button>
+                            </div>
                         </template>
                     </div>
                 </div>

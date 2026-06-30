@@ -26,6 +26,8 @@ import ProductVersionView from '@/views/ProductVersionView.js';
 import ProductSelectionView from '@/views/ProductSelectionView.js';
 import GoogleTrendsView from '@/views/GoogleTrendsView.js';
 import AmcAdsView from '@/views/AmcAdsView.js';
+import AiOfficeView from '@/views/AiOfficeView.js';
+import AiOfficeTaskView from '@/views/AiOfficeTaskView.js';
 
 const layoutChildren = [
     { path: '', redirect: '/dashboard' },
@@ -52,6 +54,8 @@ const layoutChildren = [
     { path: 'metrics/manual', name: 'metrics-manual', component: MetricsManualView, meta: { active: 'metrics', title: '每日数据填报' } },
     { path: 'tickets', name: 'tickets', component: TicketsView, meta: { active: 'tickets', title: '工单看板' } },
     { path: 'tickets/:id', name: 'ticket-detail', component: TicketDetailView, meta: { active: 'tickets', title: '工单详情' } },
+    { path: 'ai-office', name: 'ai-office', component: AiOfficeView, meta: { active: 'ai_office', title: 'AI 办公室' } },
+    { path: 'ai-office/tasks/:id', name: 'ai-office-task', component: AiOfficeTaskView, meta: { active: 'ai_office', title: 'AI 任务详情' } },
     { path: 'product/:asin', name: 'product', component: ProductView, meta: { active: '', title: '产品详情' } },
     { path: 'product/:asin/version/:versionId', name: 'product-version', component: ProductVersionView, meta: { active: '', title: '产品版本' } }
 ];
