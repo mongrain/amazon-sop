@@ -11,31 +11,37 @@ export default {
         const productListPath = ref('');
         const tacosPath = ref('');
         const inventoryPath = ref('');
+        const asinUpdatePath = ref('');
         const result = ref(null);
         const productListResult = ref(null);
         const tacosResult = ref(null);
         const inventoryResult = ref(null);
+        const asinUpdateResult = ref(null);
         const importing = ref(false);
         const importingProductList = ref(false);
         const importingTacos = ref(false);
         const importingInventory = ref(false);
+        const importingAsinUpdate = ref(false);
         const error = ref('');
         const productListError = ref('');
         const tacosError = ref('');
         const inventoryError = ref('');
+        const asinUpdateError = ref('');
 
         onMounted(async () => {
             try {
-                const [sopRes, productListRes, tacosRes, inventoryRes] = await Promise.all([
+                const [sopRes, productListRes, tacosRes, inventoryRes, asinUpdateRes] = await Promise.all([
                     http.get('/api/import'),
                     http.get('/api/import/product-list'),
                     http.get('/api/import/tacos'),
-                    http.get('/api/import/inventory-report')
+                    http.get('/api/import/inventory-report'),
+                    http.get('/api/import/asin-update')
                 ]);
                 importPath.value = sopRes.data.import_path || '';
                 productListPath.value = productListRes.data.import_path || '';
                 tacosPath.value = tacosRes.data.import_path || '';
                 inventoryPath.value = inventoryRes.data.import_path || '';
+                asinUpdatePath.value = asinUpdateRes.data.import_path || '';
             } catch (e) { /* ignore */ }
         });
 
@@ -95,12 +101,26 @@ export default {
             }
         }
 
+        async function startAsinUpdateImport() {
+            asinUpdateError.value = '';
+            importingAsinUpdate.value = true;
+            asinUpdateResult.value = null;
+            try {
+                const { data } = await http.post('/api/import/asin-update');
+                asinUpdateResult.value = data.result || data;
+            } catch (e) {
+                asinUpdateError.value = getApiError(e, '导入失败');
+            } finally {
+                importingAsinUpdate.value = false;
+            }
+        }
+
         return {
-            importPath, productListPath, tacosPath, inventoryPath,
-            result, productListResult, tacosResult, inventoryResult,
-            importing, importingProductList, importingTacos, importingInventory,
-            error, productListError, tacosError, inventoryError,
-            startImport, startProductListImport, startTacosImport, startInventoryImport
+            importPath, productListPath, tacosPath, inventoryPath, asinUpdatePath,
+            result, productListResult, tacosResult, inventoryResult, asinUpdateResult,
+            importing, importingProductList, importingTacos, importingInventory, importingAsinUpdate,
+            error, productListError, tacosError, inventoryError, asinUpdateError,
+            startImport, startProductListImport, startTacosImport, startInventoryImport, startAsinUpdateImport
         };
     },
     template: `<div class="page-header">
@@ -267,7 +287,7 @@ export default {
                     <h2>从商品库存报告导入</h2>
                     <p class="import-desc">
                         系统将读取 <code>public/商品库存报告.txt</code>（Amazon 库存报告 TSV），<br>
-                        按 <code>open-date</code> 更新产品库中的<strong>创建时间</strong>；不存在的产品将自动新建。
+                        按 <code>open-date</code> 更新产品库中的<strong>上架日期</strong>；不存在的产品将自动新建。
                     </p>
                     <p v-if="inventoryPath" class="import-note">
                         文件路径: <code>{{ inventoryPath }}</code>
@@ -290,8 +310,8 @@ export default {
                         <h3>库存报告导入完成</h3>
                         <div class="result-stats">
                             <div class="result-stat">
-                                <span class="result-number">{{ inventoryResult.created_at_updated }}</span>
-                                <span class="result-label">创建时间更新</span>
+                                <span class="result-number">{{ inventoryResult.listed_at_updated }}</span>
+                                <span class="result-label">上架日期更新</span>
                             </div>
                             <div class="result-stat">
                                 <span class="result-number">{{ inventoryResult.products_created }}</span>
@@ -317,6 +337,63 @@ export default {
                             <h4>部分错误:</h4>
                             <ul>
                                 <li v-for="(err, i) in inventoryResult.errors.slice(0, 10)" :key="i">{{ err }}</li>
+                            </ul>
+                        </div>
+                        <router-link to="/dashboard" class="btn-secondary">查看产品看板</router-link>
+                    </template>
+                </div>
+
+                <div class="import-card" style="margin-top:24px;">
+                    <h2>从 ASIN 上架时间表导入</h2>
+                    <p class="import-desc">
+                        系统将读取 <code>public/asin更新.xlsx</code> 中的 ASIN 与上架时间，<br>
+                        更新产品库中已有产品的<strong>上架日期</strong>。若 ASIN 重复，以表格中<strong>最后一行</strong>为准；上架时间为空则跳过。
+                    </p>
+                    <p v-if="asinUpdatePath" class="import-note">
+                        Excel文件路径: <code>{{ asinUpdatePath }}</code>
+                    </p>
+                    <button type="button" class="btn-primary btn-large" @click="startAsinUpdateImport" :disabled="importingAsinUpdate">
+                        {{ importingAsinUpdate ? '导入中…' : '导入上架日期' }}
+                    </button>
+                </div>
+
+                <div v-if="asinUpdateError" class="import-result error">
+                    <h3>上架日期导入失败</h3>
+                    <p>{{ asinUpdateError }}</p>
+                </div>
+                <div v-if="asinUpdateResult" class="import-result" :class="asinUpdateResult.error ? 'error' : 'success'">
+                    <template v-if="asinUpdateResult.error">
+                        <h3>上架日期导入失败</h3>
+                        <p>{{ asinUpdateResult.error }}</p>
+                    </template>
+                    <template v-else>
+                        <h3>上架日期导入完成</h3>
+                        <div class="result-stats">
+                            <div class="result-stat">
+                                <span class="result-number">{{ asinUpdateResult.listed_at_updated }}</span>
+                                <span class="result-label">上架日期更新</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ asinUpdateResult.products_not_found }}</span>
+                                <span class="result-label">ASIN 未找到</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ asinUpdateResult.skipped_no_date }}</span>
+                                <span class="result-label">无日期跳过</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ asinUpdateResult.products_unchanged }}</span>
+                                <span class="result-label">无变化</span>
+                            </div>
+                            <div class="result-stat">
+                                <span class="result-number">{{ asinUpdateResult.unique_asin }}</span>
+                                <span class="result-label">唯一 ASIN</span>
+                            </div>
+                        </div>
+                        <div v-if="asinUpdateResult.errors && asinUpdateResult.errors.length" class="result-errors">
+                            <h4>部分错误:</h4>
+                            <ul>
+                                <li v-for="(err, i) in asinUpdateResult.errors.slice(0, 10)" :key="i">{{ err }}</li>
                             </ul>
                         </div>
                         <router-link to="/dashboard" class="btn-secondary">查看产品看板</router-link>

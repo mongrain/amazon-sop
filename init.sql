@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS products (
     overall_progress DOUBLE DEFAULT 0,
     excel_row INT DEFAULT NULL,
     link_group_id INT DEFAULT NULL COMMENT '关联 ASIN 组 ID，同组产品淘汰分析时合并销量',
+    listed_at DATETIME DEFAULT NULL COMMENT '上架日期',
+    operating_started_at DATETIME DEFAULT NULL COMMENT '运营开始时间',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_asin (asin),

@@ -595,6 +595,89 @@ async function initDb() {
     }
 
     try {
+        await p.query('ALTER TABLE products ADD COLUMN listed_at DATETIME DEFAULT NULL COMMENT \'上架日期\' AFTER link_group_id');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('UPDATE products SET listed_at = created_at WHERE listed_at IS NULL AND created_at IS NOT NULL');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE products ADD COLUMN operating_days INT DEFAULT NULL COMMENT \'运营天数\' AFTER listed_at');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE products ADD COLUMN operating_started_at DATETIME DEFAULT NULL COMMENT \'运营开始时间\' AFTER listed_at');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`
+            UPDATE products
+            SET operating_started_at = DATE_SUB(DATE(NOW()), INTERVAL operating_days DAY)
+            WHERE operating_started_at IS NULL
+              AND operating_days IS NOT NULL
+        `);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE products DROP COLUMN operating_days');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS product_operating_days_tasks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            asin VARCHAR(30) NOT NULL,
+            station VARCHAR(10) NOT NULL DEFAULT 'US',
+            status ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
+            operating_started_at DATETIME DEFAULT NULL,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_product (product_id),
+            INDEX idx_status (status),
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE product_operating_days_tasks ADD COLUMN operating_started_at DATETIME DEFAULT NULL AFTER status');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`
+            UPDATE product_operating_days_tasks
+            SET operating_started_at = DATE_SUB(DATE(NOW()), INTERVAL operating_days DAY)
+            WHERE operating_started_at IS NULL
+              AND operating_days IS NOT NULL
+        `);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE product_operating_days_tasks DROP COLUMN operating_days');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
         await p.query('ALTER TABLE products ADD INDEX idx_link_group (link_group_id)');
     } catch (e) {
         if (!isSafeMigrationError(e)) {}

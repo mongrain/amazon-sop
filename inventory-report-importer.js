@@ -2,6 +2,7 @@ const path = require('path');
 const { runSql, queryOne, queryAll, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
 const { ensureEconomicsForProduct } = require('./product-economics');
 const { mapSiteFromLabel } = require('./product-sites');
+const { enqueueOperatingDaysTask } = require('./service/operating-days-queue');
 
 const INVENTORY_REPORT_PATH = path.join(__dirname, 'public', '商品库存报告.txt');
 const ABANDONED_STATUS = '已放弃';
@@ -93,7 +94,7 @@ function collectRowsByAsin(lines) {
 }
 
 /**
- * 从 public/商品库存报告.txt 导入产品库，按 open-date 更新 created_at。
+ * 从 public/商品库存报告.txt 导入产品库，按 open-date 更新 listed_at。
  * 同一 ASIN 多行时取最早的 open-date。
  */
 async function importInventoryReportTxt() {
@@ -114,7 +115,7 @@ async function importInventoryReportTxt() {
     }
 
     const byAsin = collectRowsByAsin(lines);
-    const existingRows = await queryAll('SELECT id, asin, name, seq, status, created_at FROM products');
+    const existingRows = await queryAll('SELECT id, asin, name, seq, status, listed_at FROM products');
     const productMap = new Map(existingRows.map(p => [String(p.asin).toUpperCase(), p]));
 
     const stats = {
@@ -122,7 +123,7 @@ async function importInventoryReportTxt() {
         unique_asin: byAsin.size,
         products_created: 0,
         products_updated: 0,
-        created_at_updated: 0,
+        listed_at_updated: 0,
         status_set_abandoned: 0,
         products_unchanged: 0,
         skipped_no_date: 0,
@@ -144,19 +145,20 @@ async function importInventoryReportTxt() {
                 const seq = row.site || null;
                 const status = row.productStatus || '待处理';
                 await runSql(
-                    'INSERT INTO products (asin, name, seq, status, created_at) VALUES (?, ?, ?, ?, ?)',
+                    'INSERT INTO products (asin, name, seq, status, listed_at) VALUES (?, ?, ?, ?, ?)',
                     [asin, name, seq, status, row.openDate]
                 );
                 const created = await queryOne(
-                    'SELECT id, asin, name, seq, status, created_at FROM products WHERE asin = ?',
+                    'SELECT id, asin, name, seq, status, listed_at FROM products WHERE asin = ?',
                     [asin]
                 );
                 productMap.set(asin, created);
                 await ensureRecordsForProduct(created.id);
                 await ensureEconomicsForProduct(created.id, runSql);
                 await recalculateProductProgress(created.id);
+                await enqueueOperatingDaysTask({ productId: created.id, asin, seq });
                 stats.products_created++;
-                stats.created_at_updated++;
+                stats.listed_at_updated++;
                 if (status === ABANDONED_STATUS) stats.status_set_abandoned++;
                 continue;
             }
@@ -164,23 +166,23 @@ async function importInventoryReportTxt() {
             const nextName = row.name || product.name;
             const nextSeq = product.seq || row.site || null;
             const nextStatus = row.productStatus === ABANDONED_STATUS ? ABANDONED_STATUS : product.status;
-            const createdAtChanged = formatDbDateTime(product.created_at) !== row.openDate;
+            const listedAtChanged = formatDbDateTime(product.listed_at) !== row.openDate;
             const nameChanged = nextName !== product.name;
             const seqChanged = nextSeq !== product.seq;
             const statusChanged = nextStatus !== product.status;
 
-            if (!createdAtChanged && !nameChanged && !seqChanged && !statusChanged) {
+            if (!listedAtChanged && !nameChanged && !seqChanged && !statusChanged) {
                 stats.products_unchanged++;
                 continue;
             }
 
             await runSql(
-                'UPDATE products SET name = ?, seq = ?, status = ?, created_at = ?, updated_at = NOW() WHERE id = ?',
+                'UPDATE products SET name = ?, seq = ?, status = ?, listed_at = ?, updated_at = NOW() WHERE id = ?',
                 [nextName, nextSeq, nextStatus, row.openDate, product.id]
             );
             product.status = nextStatus;
             stats.products_updated++;
-            if (createdAtChanged) stats.created_at_updated++;
+            if (listedAtChanged) stats.listed_at_updated++;
             if (statusChanged && nextStatus === ABANDONED_STATUS) stats.status_set_abandoned++;
         } catch (e) {
             stats.errors.push(`第 ${row.rowIndex} 行 ASIN ${asin}: ${e.message}`);

@@ -627,9 +627,8 @@ function analyzeKeywordRank(metrics) {
 async function fetchAllCatalogSites(dbCtx) {
     const rows = await dbCtx.queryAll(
         `SELECT DISTINCT seq FROM products
-         WHERE status != ? AND seq IS NOT NULL AND seq != ''
-         ORDER BY seq ASC`,
-        [ABANDONED_STATUS]
+         WHERE seq IS NOT NULL AND seq != ''
+         ORDER BY seq ASC`
     );
     return (rows || []).map(r => r.seq);
 }
@@ -663,11 +662,11 @@ async function fetchCatalogProductsBySites(sites, dbCtx) {
     if (!sites.length) return new Map();
     const placeholders = sites.map(() => '?').join(',');
     const rows = await dbCtx.queryAll(
-        `SELECT id, asin, name, seq, status, category, created_at
+        `SELECT id, asin, name, seq, status, category, operating_started_at
          FROM products
-         WHERE seq IN (${placeholders}) AND status != ?
+         WHERE seq IN (${placeholders})
          ORDER BY seq ASC, asin ASC`,
-        [...sites, ABANDONED_STATUS]
+        sites
     );
     const map = new Map();
     for (const site of sites) map.set(site, []);
@@ -720,20 +719,9 @@ function buildSiteOrderGroups(orders) {
     return { bySite, skippedUnmappedStore };
 }
 
-function formatListedAt(value) {
-    if (!value) return null;
-    if (value instanceof Date) {
-        const pad = (n) => String(n).padStart(2, '0');
-        return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())} ${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}`;
-    }
-    const text = String(value).trim();
-    if (!text) return null;
-    return text.slice(0, 19).replace('T', ' ');
-}
-
 async function fetchProductCost(asin, dbCtx, catalogProduct = null) {
     const product = catalogProduct || await dbCtx.queryOne(
-        'SELECT id, asin, name, created_at FROM products WHERE asin = ?',
+        'SELECT id, asin, name, operating_started_at FROM products WHERE asin = ?',
         [asin]
     );
     if (!product) return { found: false, error: COST_NOT_FOUND };
@@ -752,7 +740,7 @@ async function fetchProductCost(asin, dbCtx, catalogProduct = null) {
         found: true,
         productId: product.id,
         productName: product.name,
-        createdAt: product.created_at,
+        operatingStartedAt: product.operating_started_at,
         costPriceRmb: costRmb,
         costPriceUsd: costUsd,
         profitUsdPerUnit: profitUsd,
@@ -827,7 +815,7 @@ async function buildProductResultRow({
         msku: orderGroup?.msku || '',
         productStatus: catalogProduct?.status || null,
         category: catalogProduct?.category || null,
-        listedAt: formatListedAt(catalogProduct?.created_at || costInfo.createdAt),
+        operatingStartedAt: catalogProduct?.operating_started_at ?? costInfo.operatingStartedAt ?? null,
         inCatalog: Boolean(catalogProduct),
         hasOrders,
         orderStores: orderGroup?.orderStores || [],

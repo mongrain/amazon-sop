@@ -2,6 +2,7 @@ const XLSX = require('xlsx');
 const path = require('path');
 const { runSql, queryOne, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
 const { ensureEconomicsForProduct } = require('./product-economics');
+const { enqueueOperatingDaysTask } = require('./service/operating-days-queue');
 
 const TACOS_PATH = path.join(__dirname, 'public', 'TACOS.xlsx');
 
@@ -66,6 +67,7 @@ async function ensureProduct(asin, name) {
         product = await queryOne('SELECT id, name FROM products WHERE asin = ?', [asin]);
         await ensureRecordsForProduct(product.id);
         await recalculateProductProgress(product.id);
+        await enqueueOperatingDaysTask({ productId: product.id, asin });
         return { productId: product.id, created: true };
     }
     if (name && name !== product.name) {

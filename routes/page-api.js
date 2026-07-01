@@ -83,6 +83,9 @@ function registerProtectedPageApi(app, ctx) {
         PRODUCT_LIST_PATH,
         importInventoryReportTxt,
         INVENTORY_REPORT_PATH,
+        importAsinUpdateExcel,
+        ASIN_UPDATE_PATH,
+        enqueueOperatingDaysForAllActiveProducts,
         hashPassword,
         verifyPassword,
         destroySession,
@@ -186,7 +189,7 @@ function registerProtectedPageApi(app, ctx) {
             }
 
             let products = await queryAll(
-                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row FROM products WHERE ${whereSql} ORDER BY (status = '已放弃') ASC, created_at ASC LIMIT ? OFFSET ?`,
+                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row, listed_at, operating_started_at FROM products WHERE ${whereSql} ORDER BY (status = '已放弃') ASC, created_at ASC LIMIT ? OFFSET ?`,
                 [...filterParams, pageSize, offset]
             );
 
@@ -486,6 +489,19 @@ function registerProtectedPageApi(app, ctx) {
         try {
             const result = await importInventoryReportTxt();
             res.json({ import_path: INVENTORY_REPORT_PATH, result });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/import/asin-update', (req, res) => {
+        res.json({ import_path: ASIN_UPDATE_PATH, result: null });
+    });
+
+    app.post('/api/import/asin-update', async (req, res) => {
+        try {
+            const result = await importAsinUpdateExcel();
+            res.json({ import_path: ASIN_UPDATE_PATH, result });
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
@@ -1627,6 +1643,15 @@ function registerProtectedPageApi(app, ctx) {
             res.json(data);
         } catch (e) {
             res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/operating-days/fetch-all', async (req, res) => {
+        try {
+            const result = await enqueueOperatingDaysForAllActiveProducts();
+            res.json({ status: 'ok', ...result });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
         }
     });
 

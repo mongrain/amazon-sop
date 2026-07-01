@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import { getApiError, http, fmtDateTime } from '@/utils/index.js';
+import { getApiError, http, fmtDateTime, computeOperatingDays } from '@/utils/index.js';
 
 function formatMoney(value) {
     if (value == null || Number.isNaN(value)) return '—';
@@ -37,6 +37,13 @@ export default {
         const filterStore = ref('');
         const filterAsin = ref('');
         const salesSort = ref('desc');
+        const fetchingOperatingDays = ref(false);
+        const operatingDaysFetchMsg = ref('');
+
+        function formatOperatingDays(startedAt) {
+            const days = computeOperatingDays(startedAt);
+            return days != null ? `${days} 天` : '—';
+        }
 
         const summary = computed(() => {
             if (!result.value) return null;
@@ -72,7 +79,9 @@ export default {
             }
 
             const asinQuery = filterAsin.value.trim().toUpperCase();
-            if (asinQuery) {
+            if (!asinQuery) {
+                rows = rows.filter(row => row.productStatus !== '已放弃');
+            } else {
                 rows = rows.filter(row => {
                     const asinPool = [
                         row.asin,
@@ -175,6 +184,20 @@ export default {
             }
         }
 
+        async function fetchAllOperatingDays() {
+            if (!confirm('将为所有未放弃产品加入运营天数抓取队列（约每 5 秒 1 条），确认继续？')) return;
+            operatingDaysFetchMsg.value = '';
+            fetchingOperatingDays.value = true;
+            try {
+                const { data } = await http.post('/api/operating-days/fetch-all');
+                operatingDaysFetchMsg.value = `已加入队列 ${data.enqueued ?? 0} 个产品${data.skipped ? `，${data.skipped} 个已有运营开始日期已跳过` : ''}，后台抓取中`;
+            } catch (e) {
+                operatingDaysFetchMsg.value = getApiError(e, '抓取任务提交失败');
+            } finally {
+                fetchingOperatingDays.value = false;
+            }
+        }
+
         return {
             fileInput,
             selectedFile,
@@ -186,6 +209,8 @@ export default {
             filterStore,
             filterAsin,
             salesSort,
+            fetchingOperatingDays,
+            operatingDaysFetchMsg,
             siteOptions,
             filteredResults,
             hasActiveFilters,
@@ -194,6 +219,8 @@ export default {
             clearFile,
             analyze,
             analyzeSample,
+            fetchAllOperatingDays,
+            formatOperatingDays,
             toggleExpand,
             updateProductStatus,
             amazonDpUrl,
@@ -204,10 +231,21 @@ export default {
             fmtDateTime
         };
     },
-    template: `<div class="page-header">
-                <h1>产品淘汰分析</h1>
-                <p class="page-subtitle">支持 Amazon 订单 TXT 与领星订单 Excel 两种格式，按站点列出产品库中非已放弃产品并覆盖订单数据</p>
+    template: `<div class="page-header elimination-page-header">
+                <div>
+                    <h1>产品淘汰分析</h1>
+                    <p class="page-subtitle">支持 Amazon 订单 TXT 与领星订单 Excel 两种格式，按站点列出产品库中非已放弃产品并覆盖订单数据</p>
+                </div>
+                <div class="elimination-header-actions">
+                    <button
+                        type="button"
+                        class="btn-secondary"
+                        :disabled="fetchingOperatingDays"
+                        @click="fetchAllOperatingDays"
+                    >{{ fetchingOperatingDays ? '提交中…' : '一键抓取运营天数' }}</button>
+                </div>
             </div>
+            <p v-if="operatingDaysFetchMsg" class="elimination-meta">{{ operatingDaysFetchMsg }}</p>
 
             <div class="elimination-upload-card module-card">
                 <div class="module-body">
@@ -308,7 +346,7 @@ export default {
                                     <th>关联 ASIN</th>
                                     <th>标题</th>
                                     <th>产品状态</th>
-                                    <th>上架时间</th>
+                                    <th>运营天数</th>
                                     <th>卖出情况</th>
                                     <th>销售额</th>
                                     <th>组销售额</th>
@@ -350,7 +388,7 @@ export default {
                                             </select>
                                             <span v-else class="elimination-note">不在产品库</span>
                                         </td>
-                                        <td class="elimination-listed-at">{{ row.listedAt ? fmtDateTime(row.listedAt) : '—' }}</td>
+                                        <td class="elimination-operating-days">{{ formatOperatingDays(row.operatingStartedAt) }}</td>
                                         <td>
                                             <span v-if="row.hasOrders" class="elimination-has-order">有订单</span>
                                             <span v-else class="elimination-no-order">无卖出订单</span>
@@ -389,7 +427,7 @@ export default {
                                                     <ul>
                                                         <li>站点：{{ row.site }}</li>
                                                         <li v-if="row.orderStores && row.orderStores.length">订单店铺：{{ row.orderStores.join('、') }}</li>
-                                                        <li>上架时间：{{ row.listedAt ? fmtDateTime(row.listedAt) : '—' }}</li>
+                                                        <li>运营天数：{{ formatOperatingDays(row.operatingStartedAt) }}</li>
                                                         <li>卖出情况：{{ row.hasOrders ? '有订单' : '无卖出订单' }}</li>
                                                         <li>订单数量：{{ row.hasOrders ? row.orderCount : 0 }}</li>
                                                         <li>店铺销售额占比：{{ row.salesSharePct != null ? row.salesSharePct + '%' : '—' }}</li>

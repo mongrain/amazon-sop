@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 const path = require('path');
 const { runSql, queryAll, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
+const { enqueueOperatingDaysTask } = require('./service/operating-days-queue');
 
 const EXCEL_PATH = path.join(__dirname, '..', '复核审核表.xlsx');
 
@@ -91,6 +92,7 @@ async function importExcel() {
             `, [String(seq), asinStr, String(name), String(category), json.indexOf(row) + 1]);
             stats.products_added++;
             const productId = productResult && productResult.insertId ? productResult.insertId : null;
+            const isNewProduct = productResult && productResult.affectedRows === 1;
             if (!productId) {
                 stats.errors.push(`ASIN ${asinStr}: 无法获取产品ID`);
                 continue;
@@ -98,6 +100,9 @@ async function importExcel() {
 
             // Ensure all SOP records exist for this product
             await ensureRecordsForProduct(productId);
+            if (isNewProduct) {
+                await enqueueOperatingDaysTask({ productId, asin: asinStr, seq: String(seq) });
+            }
 
             // Read cell values and map to sop_items
             for (const [colIdx, sopItemId] of Object.entries(colToItemId)) {

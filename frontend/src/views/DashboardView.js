@@ -1,6 +1,6 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { buildQuery, getApiError, http, pct } from '@/utils/index.js';
+import { buildQuery, computeOperatingDays, fmtDateTime, getApiError, http, pct } from '@/utils/index.js';
 import { PRODUCT_SITES } from '@/constants/product-sites.js';
 import { PRODUCT_CATEGORIES } from '@/constants/product-categories.js';
 
@@ -39,6 +39,11 @@ export default {
             for (let p = winStart; p <= winEnd; p++) pages.push(p);
             return { winStart, winEnd, pages };
         });
+
+        function formatOperatingDays(startedAt) {
+            const days = computeOperatingDays(startedAt);
+            return days != null ? `${days} 天` : '—';
+        }
 
         async function loadData(newPage) {
             if (newPage) page.value = newPage;
@@ -154,7 +159,7 @@ export default {
             page, total, totalPages, startItem, endItem, pagination,
             showAddModal, showEditModal, addForm, editForm, addError, editError,
             productSites: PRODUCT_SITES, productCategories: PRODUCT_CATEGORIES,
-            pct, loadData, applyFilters, goProduct, openAddModal, openEditModal,
+            pct, fmtDateTime, formatOperatingDays, loadData, applyFilters, goProduct, openAddModal, openEditModal,
             addProduct, saveEditProduct, deleteProduct
         };
     },
@@ -201,6 +206,8 @@ export default {
                                 <th style="min-width:80px">站点</th>
                                 <th style="min-width:100px">分类</th>
                                 <th style="min-width:80px">状态</th>
+                                <th style="min-width:110px">上架日期</th>
+                                <th style="min-width:80px">运营天数</th>
                                 <th v-for="m in modules" :key="m.id" style="min-width:100px" :title="m.name">{{ m.name.substring(0, 4) }}</th>
                                 <th style="min-width:100px">总进度</th>
                                 <th style="min-width:180px">操作</th>
@@ -208,11 +215,11 @@ export default {
                         </thead>
                         <tbody>
                             <tr v-if="loading">
-                                <td :colspan="modules.length + 8" style="text-align:center; padding:40px; color:#999;">加载中…</td>
+                                <td :colspan="modules.length + 10" style="text-align:center; padding:40px; color:#999;">加载中…</td>
                             </tr>
                             <template v-else>
                                 <tr v-if="products.length === 0">
-                                    <td :colspan="modules.length + 8" style="text-align:center; padding:40px; color:#999;">
+                                    <td :colspan="modules.length + 10" style="text-align:center; padding:40px; color:#999;">
                                         暂无产品数据，请先<router-link to="/import" style="color:#409eff;">导入Excel数据</router-link>
                                         或<a href="javascript:void(0)" @click.prevent="openAddModal" style="color:#409eff;">新增产品</a>
                                     </td>
@@ -224,6 +231,8 @@ export default {
                                 <td>{{ p.seq || '-' }}</td>
                                 <td>{{ p.category || '-' }}</td>
                                 <td><span class="status-badge" :class="'status-' + (p.status || '待处理')">{{ p.status || '待处理' }}</span></td>
+                                <td>{{ p.listed_at ? fmtDateTime(p.listed_at) : '—' }}</td>
+                                <td>{{ formatOperatingDays(p.operating_started_at) }}</td>
                                 <td v-for="m in modules" :key="m.id">
                                     <div class="mini-progress">
                                         <div class="mini-bar" :style="{ width: pct((p.module_progress[m.id] || {}).percentage) + '%' }"></div>

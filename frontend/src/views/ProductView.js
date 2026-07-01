@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { fmtDateTime, getApiError, http, pct } from '@/utils/index.js';
+import { fmtDateTime, getApiError, http, pct, computeOperatingDays } from '@/utils/index.js';
 import { openViewer } from '@/utils/viewer.js';
 import ProductEconomicsPanel from '@/components/ProductEconomicsPanel.js';
 import { PRODUCT_SITES } from '@/constants/product-sites.js';
@@ -48,6 +48,7 @@ export default {
         const editCategory = ref('');
         const editSite = ref('');
         const editError = ref('');
+        const operatingDaysInput = ref('');
 
         const versionModalOpen = ref(false);
         const newVersionName = ref('');
@@ -79,6 +80,11 @@ export default {
             });
             return total > 0 ? Math.round(completed / total * 100) : 0;
         });
+
+        function syncOperatingDaysInput() {
+            const days = computeOperatingDays(product.value?.operating_started_at);
+            operatingDaysInput.value = days != null ? String(days) : '';
+        }
 
         function getDataItems(module) {
             return (module.sop_items || []).filter(i => i.is_data_column);
@@ -129,6 +135,7 @@ export default {
                 recordMap.value = data.recordMap || {};
                 moduleProgress.value = data.moduleProgress || {};
                 economics.value = data.economics || null;
+                syncOperatingDaysInput();
                 await loadRelatedProducts();
             } catch (e) {
                 alert(getApiError(e, '加载失败'));
@@ -208,6 +215,38 @@ export default {
                     if (product.value) product.value.category = categoryVal || '';
                 })
                 .catch(e => console.error('Category update failed:', e));
+        }
+
+        async function updateOperatingDays(event) {
+            const odText = String(event?.target?.value ?? operatingDaysInput.value ?? '').trim();
+            const currentDays = computeOperatingDays(product.value?.operating_started_at);
+            const currentText = currentDays != null ? String(currentDays) : '';
+            if (odText === currentText) return;
+
+            let payload;
+            if (odText === '') {
+                if (currentDays == null) {
+                    syncOperatingDaysInput();
+                    return;
+                }
+                payload = null;
+            } else {
+                const days = Number(odText);
+                if (Number.isNaN(days) || days < 0 || !Number.isInteger(days)) {
+                    alert('运营天数必须是非负整数');
+                    syncOperatingDaysInput();
+                    return;
+                }
+                payload = days;
+            }
+
+            try {
+                await http.patch('/api/product/' + encodeURIComponent(asin.value), { operating_days: payload });
+                await loadData();
+            } catch (e) {
+                alert(getApiError(e, '运营天数保存失败'));
+                syncOperatingDaysInput();
+            }
         }
 
         function openEditModal() {
@@ -462,7 +501,7 @@ export default {
         });
 
         return {
-            loading, product, modules, recordMap, economics, statusOptions, overallProgress,
+            loading, product, modules, recordMap, economics, statusOptions, overallProgress, operatingDaysInput,
             collapsedGroups, expandedInstructions,
             editModalOpen, editName, editCategory, editSite, editError,
             productSites: PRODUCT_SITES, productCategories: PRODUCT_CATEGORIES,
@@ -471,7 +510,7 @@ export default {
             isGroupCollapsed, toggleGroup, isInstructionExpanded, toggleInstruction,
             getFieldTime, parseUploadedUrls, fmtDateTime, pct,
             updateRecord, uploadActionImage, deleteActionImage,
-            updateProductStatus, updateProductSite, updateProductCategory,
+            updateProductStatus, updateProductSite, updateProductCategory, updateOperatingDays,
             openEditModal, closeEditModal, saveEditProduct, deleteProduct,
             openVersionModal, closeVersionModal, loadVersions, createVersion, deleteVersion,
             fmtTime, escapeHtml, openViewer, onEconomicsUpdated,
@@ -507,6 +546,19 @@ export default {
                                     <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
                                 </select>
                             </span>
+                            <span class="meta-item">运营天数:
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    class="status-select px-2 py-0.5 text-xs w-[72px]"
+                                    v-model="operatingDaysInput"
+                                    placeholder="—"
+                                    @blur="updateOperatingDays"
+                                >
+                                天
+                            </span>
+                            <span v-if="product.operating_started_at" class="meta-item">运营开始: {{ fmtDateTime(product.operating_started_at) }}</span>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">

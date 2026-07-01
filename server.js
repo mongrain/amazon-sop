@@ -19,6 +19,15 @@ const { importExcel, EXCEL_PATH } = require('./importer');
 const { importTacosExcel, TACOS_PATH } = require('./tacos-importer');
 const { importProductListExcel, PRODUCT_LIST_PATH } = require('./product-list-importer');
 const { importInventoryReportTxt, INVENTORY_REPORT_PATH } = require('./inventory-report-importer');
+const { importAsinUpdateExcel, ASIN_UPDATE_PATH } = require('./asin-update-importer');
+const {
+    initOperatingDaysQueue,
+    enqueueOperatingDaysTask,
+    enqueueOperatingDaysForAllActiveProducts,
+    startOperatingDaysWorker
+} = require('./service/operating-days-queue');
+const { resolveOperatingStartedAtFromManualDays } = require('./service/operating-days');
+const { siteToStation } = require('./service/get-sell-time');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
 const { compareStorefrontImages } = require('./gpt');
@@ -91,6 +100,9 @@ function getPageApiCtx() {
         PRODUCT_LIST_PATH,
         importInventoryReportTxt,
         INVENTORY_REPORT_PATH,
+        importAsinUpdateExcel,
+        ASIN_UPDATE_PATH,
+        enqueueOperatingDaysForAllActiveProducts,
         hashPassword,
         verifyPassword,
         destroySession,
@@ -170,6 +182,8 @@ initDb()
     .then(() => ensureDefaultAdmin({ queryOne, runSql }))
     .then(() => {
         dbReady = true;
+        initOperatingDaysQueue({ queryOne, queryAll, runSql });
+        startOperatingDaysWorker();
         console.log('Database initialized');
     })
     .catch(err => {
@@ -917,12 +931,40 @@ app.get('/api/competitor/:id/monitor-records', async (req, res) => {
     }
 });
 
+async function applyManualOperatingDays(productId, operatingDaysInput) {
+    if (operatingDaysInput === undefined) return;
+
+    const startedAt = resolveOperatingStartedAtFromManualDays(operatingDaysInput);
+    await runSql(
+        'UPDATE products SET operating_started_at = ?, updated_at = NOW() WHERE id = ?',
+        [startedAt, productId]
+    );
+
+    const product = await queryOne('SELECT asin, seq FROM products WHERE id = ?', [productId]);
+    if (!product) return;
+
+    const station = siteToStation(product.seq);
+    if (startedAt) {
+        await runSql(
+            `INSERT INTO product_operating_days_tasks (product_id, asin, station, status, operating_started_at)
+             VALUES (?, ?, ?, 'done', ?)
+             ON DUPLICATE KEY UPDATE
+                status = 'done',
+                operating_started_at = VALUES(operating_started_at),
+                error_message = NULL,
+                updated_at = NOW()`,
+            [productId, product.asin, station, startedAt]
+        );
+    }
+}
+
 app.patch('/api/product/:asin', async (req, res) => {
     try {
         const { asin } = req.params;
-        const { status, site, category } = req.body;
+        const { status, site, category, operating_days: operatingDaysInput } = req.body;
         const sets = [];
         const params = [];
+        let applyOperatingDays = false;
         if (status !== undefined) {
             sets.push('status = ?');
             params.push(status);
@@ -940,10 +982,20 @@ app.patch('/api/product/:asin', async (req, res) => {
             sets.push('category = ?');
             params.push(categoryVal);
         }
-        if (!sets.length) return res.status(400).json({ error: '无更新字段' });
-        sets.push('updated_at = NOW()');
-        params.push(asin);
-        await runSql(`UPDATE products SET ${sets.join(', ')} WHERE asin = ?`, params);
+        if (operatingDaysInput !== undefined) {
+            applyOperatingDays = true;
+        }
+        if (!sets.length && !applyOperatingDays) return res.status(400).json({ error: '无更新字段' });
+        if (sets.length) {
+            sets.push('updated_at = NOW()');
+            params.push(asin);
+            await runSql(`UPDATE products SET ${sets.join(', ')} WHERE asin = ?`, params);
+        }
+        if (applyOperatingDays) {
+            const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+            if (!product) return res.status(404).json({ error: 'Product not found' });
+            await applyManualOperatingDays(product.id, operatingDaysInput);
+        }
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('API product update error:', e);
@@ -970,10 +1022,15 @@ app.post('/api/product', async (req, res) => {
             'INSERT INTO products (asin, name, category, seq) VALUES (?, ?, ?, ?)',
             [asin, name || null, category || null, siteVal]
         );
-        const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+        const product = await queryOne('SELECT id, seq FROM products WHERE asin = ?', [asin]);
         await ensureRecordsForProduct(product.id);
         await ensureEconomicsForProduct(product.id, runSql);
         await recalculateProductProgress(product.id);
+        await enqueueOperatingDaysTask({
+            productId: product.id,
+            asin,
+            seq: siteVal
+        });
 
         res.json({ status: 'ok', asin });
     } catch (e) {
@@ -985,7 +1042,7 @@ app.post('/api/product', async (req, res) => {
 app.put('/api/product/:asin', async (req, res) => {
     try {
         const { asin } = req.params;
-        const { name, category, site } = req.body;
+        const { name, category, site, operating_days: operatingDaysInput } = req.body;
         const sets = ['name = COALESCE(?, name)', 'category = COALESCE(?, category)'];
         const params = [name || null, category || null];
         if (site !== undefined) {
@@ -999,6 +1056,13 @@ app.put('/api/product/:asin', async (req, res) => {
         sets.push('updated_at = NOW()');
         params.push(asin);
         await runSql(`UPDATE products SET ${sets.join(', ')} WHERE asin = ?`, params);
+
+        if (operatingDaysInput !== undefined) {
+            const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+            if (!product) return res.status(404).json({ error: 'Product not found' });
+            await applyManualOperatingDays(product.id, operatingDaysInput);
+        }
+
         res.json({ status: 'ok' });
     } catch (e) {
         console.error('API product update error:', e);

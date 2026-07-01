@@ -1,8 +1,9 @@
 const XLSX = require('xlsx');
 const path = require('path');
-const { runSql, queryOne, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
+const { runSql, queryOne, queryAll, ensureRecordsForProduct, recalculateProductProgress } = require('./database');
 const { ensureEconomicsForProduct } = require('./product-economics');
 const { mapSiteFromLabel, PRODUCT_SITES } = require('./product-sites');
+const { enqueueOperatingDaysTask } = require('./service/operating-days-queue');
 
 const PRODUCT_LIST_PATH = path.join(__dirname, 'public', '产品清单.xlsx');
 
@@ -85,6 +86,7 @@ async function importProductListExcel() {
                 await ensureRecordsForProduct(created.id);
                 await ensureEconomicsForProduct(created.id, runSql);
                 await recalculateProductProgress(created.id);
+                await enqueueOperatingDaysTask({ productId: created.id, asin, seq: site });
                 stats.products_created++;
                 continue;
             }

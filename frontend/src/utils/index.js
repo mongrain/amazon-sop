@@ -68,6 +68,16 @@ export function pct(value) {
     return Math.round(Number(value || 0) * 100);
 }
 
+export function computeOperatingDays(startedAt, referenceDate = new Date()) {
+    if (!startedAt) return null;
+    const start = new Date(String(startedAt).replace(' ', 'T'));
+    const ref = referenceDate instanceof Date ? new Date(referenceDate) : new Date(referenceDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(ref.getTime())) return null;
+    start.setHours(0, 0, 0, 0);
+    ref.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.floor((ref.getTime() - start.getTime()) / 86400000));
+}
+
 export function fmtDateTime(dt) {
     if (!dt) return '-';
     const d = dt instanceof Date ? dt : new Date(dt);
