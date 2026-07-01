@@ -224,6 +224,31 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
+    app.get('/api/products/search', async (req, res) => {
+        try {
+            const q = String(req.query.q || '').trim();
+            const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
+            const exclude = String(req.query.exclude || '').trim();
+            if (!q) return res.json({ products: [] });
+
+            const params = [`%${q}%`, `%${q}%`];
+            let sql = `SELECT id, asin, name, status, seq, link_group_id
+                       FROM products
+                       WHERE (asin LIKE ? OR name LIKE ?)`;
+            if (exclude) {
+                sql += ' AND asin != ?';
+                params.push(exclude);
+            }
+            sql += ` ORDER BY (status = '已放弃') ASC, name ASC LIMIT ?`;
+            params.push(limit);
+
+            const products = await queryAll(sql, params);
+            res.json({ products: products || [] });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     app.get('/api/product/:asin', async (req, res) => {
         try {
             const { asin } = req.params;
@@ -273,6 +298,50 @@ function registerProtectedPageApi(app, ctx) {
             res.json({ economics });
         } catch (e) {
             res.status(500).json({ error: e.message });
+        }
+    });
+
+    const {
+        linkProducts,
+        unlinkRelatedProduct,
+        getRelatedProducts
+    } = require('../service/product-links');
+
+    app.get('/api/product/:asin/related', async (req, res) => {
+        try {
+            const { asin } = req.params;
+            const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+            if (!product) return res.status(404).json({ error: 'Product not found' });
+            const related = await getRelatedProducts(asin, { queryOne, queryAll, runSql });
+            res.json({ related });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/product/:asin/related', async (req, res) => {
+        try {
+            const { asin } = req.params;
+            const relatedAsin = req.body && req.body.relatedAsin ? String(req.body.relatedAsin).trim().toUpperCase() : '';
+            if (!relatedAsin) return res.status(400).json({ error: '请提供 relatedAsin' });
+            const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+            if (!product) return res.status(404).json({ error: 'Product not found' });
+            const related = await linkProducts(asin, relatedAsin, { queryOne, queryAll, runSql });
+            res.json({ related });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.delete('/api/product/:asin/related/:relatedAsin', async (req, res) => {
+        try {
+            const { asin, relatedAsin } = req.params;
+            const product = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);
+            if (!product) return res.status(404).json({ error: 'Product not found' });
+            const related = await unlinkRelatedProduct(asin, relatedAsin, { queryOne, queryAll, runSql });
+            res.json({ related });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
         }
     });
 

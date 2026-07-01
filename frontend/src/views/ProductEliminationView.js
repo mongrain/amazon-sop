@@ -18,6 +18,13 @@ function trendClass(value, invert = false) {
     return positive ? 'trend-up' : 'trend-down';
 }
 
+function amazonDpUrl(asin) {
+    if (!asin) return '#';
+    return 'https://www.amazon.com/dp/' + encodeURIComponent(asin);
+}
+
+const STATUS_OPTIONS = ['待处理', '进行中', '已完成', '跳过', '已放弃'];
+
 export default {
     name: 'ProductEliminationView',
     setup() {
@@ -66,7 +73,14 @@ export default {
 
             const asinQuery = filterAsin.value.trim().toUpperCase();
             if (asinQuery) {
-                rows = rows.filter(row => String(row.asin || '').toUpperCase().includes(asinQuery));
+                rows = rows.filter(row => {
+                    const asinPool = [
+                        row.asin,
+                        ...(row.linkGroupAsins || []),
+                        ...(row.relatedAsins || [])
+                    ].map(a => String(a || '').toUpperCase());
+                    return asinPool.some(a => a.includes(asinQuery));
+                });
             }
 
             const dir = salesSort.value === 'asc' ? 1 : -1;
@@ -74,7 +88,7 @@ export default {
                 const aAbandoned = a.productStatus === '已放弃' ? 1 : 0;
                 const bAbandoned = b.productStatus === '已放弃' ? 1 : 0;
                 if (aAbandoned !== bAbandoned) return aAbandoned - bAbandoned;
-                return dir * ((a.salesAmount || 0) - (b.salesAmount || 0));
+                return dir * ((a.groupSalesAmount ?? a.salesAmount ?? 0) - (b.groupSalesAmount ?? b.salesAmount ?? 0));
             });
             return rows;
         });
@@ -104,6 +118,17 @@ export default {
 
         function toggleExpand(asin) {
             expandedAsin.value = expandedAsin.value === asin ? null : asin;
+        }
+
+        function updateProductStatus(row, status) {
+            if (!row?.asin || !row.productStatus) return;
+            http.patch('/api/product/' + encodeURIComponent(row.asin), { status })
+                .then(() => {
+                    row.productStatus = status;
+                })
+                .catch(e => {
+                    alert(getApiError(e, '状态更新失败'));
+                });
         }
 
         async function analyze() {
@@ -170,6 +195,9 @@ export default {
             analyze,
             analyzeSample,
             toggleExpand,
+            updateProductStatus,
+            amazonDpUrl,
+            statusOptions: STATUS_OPTIONS,
             formatMoney,
             formatPct,
             trendClass,
@@ -259,8 +287,8 @@ export default {
                             placeholder="筛选 ASIN"
                         />
                         <select v-model="salesSort" class="filter-select">
-                            <option value="desc">销售额：从高到低</option>
-                            <option value="asc">销售额：从低到高</option>
+                            <option value="desc">组销售额：从高到低</option>
+                            <option value="asc">组销售额：从低到高</option>
                         </select>
                         <button
                             v-if="hasActiveFilters"
@@ -277,11 +305,13 @@ export default {
                                     <th>站点</th>
                                     <th>排名</th>
                                     <th>ASIN</th>
+                                    <th>关联 ASIN</th>
                                     <th>标题</th>
                                     <th>产品状态</th>
                                     <th>上架时间</th>
                                     <th>卖出情况</th>
                                     <th>销售额</th>
+                                    <th>组销售额</th>
                                     <th>占比</th>
                                     <th>毛利贡献</th>
                                     <th>下半段增长</th>
@@ -297,10 +327,27 @@ export default {
                                     <tr class="elimination-row" :class="{ 'elimination-row-no-order': !row.hasOrders }" @click="toggleExpand(row.site + row.asin)">
                                         <td>{{ row.site }}</td>
                                         <td><span class="elimination-rank">#{{ row.salesRank }}</span></td>
-                                        <td><code>{{ row.asin }}</code></td>
+                                        <td @click.stop>
+                                            <a :href="amazonDpUrl(row.asin)" target="_blank" rel="noopener noreferrer"><code>{{ row.asin }}</code></a>
+                                        </td>
+                                        <td class="elimination-related-cell" @click.stop>
+                                            <template v-if="row.relatedAsins && row.relatedAsins.length">
+                                                <template v-for="(ra, idx) in row.relatedAsins" :key="ra">
+                                                    <a :href="amazonDpUrl(ra)" target="_blank" rel="noopener noreferrer"><code>{{ ra }}</code></a><span v-if="idx < row.relatedAsins.length - 1">, </span>
+                                                </template>
+                                            </template>
+                                            <span v-else>—</span>
+                                        </td>
                                         <td class="elimination-title-cell">{{ row.title || '—' }}</td>
-                                        <td>
-                                            <span v-if="row.productStatus" class="status-badge">{{ row.productStatus }}</span>
+                                        <td @click.stop>
+                                            <select
+                                                v-if="row.productStatus"
+                                                class="status-select px-2 py-0.5 text-xs"
+                                                :value="row.productStatus"
+                                                @change="updateProductStatus(row, $event.target.value)"
+                                            >
+                                                <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
+                                            </select>
                                             <span v-else class="elimination-note">不在产品库</span>
                                         </td>
                                         <td class="elimination-listed-at">{{ row.listedAt ? fmtDateTime(row.listedAt) : '—' }}</td>
@@ -309,6 +356,10 @@ export default {
                                             <span v-else class="elimination-no-order">无卖出订单</span>
                                         </td>
                                         <td>{{ row.hasOrders ? formatMoney(row.salesAmount) : '—' }}</td>
+                                        <td>
+                                            <span v-if="row.relatedAsins && row.relatedAsins.length">{{ formatMoney(row.groupSalesAmount) }}</span>
+                                            <span v-else>{{ row.hasOrders ? formatMoney(row.groupSalesAmount) : '—' }}</span>
+                                        </td>
                                         <td>{{ row.salesSharePct != null ? row.salesSharePct + '%' : '—' }}</td>
                                         <td>
                                             <span v-if="row.costError" class="elimination-cost-error">{{ row.costError }}</span>
@@ -331,7 +382,7 @@ export default {
                                         <td class="elimination-expand-icon">{{ expandedAsin === row.site + row.asin ? '▼' : '▶' }}</td>
                                     </tr>
                                     <tr v-if="expandedAsin === row.site + row.asin" class="elimination-detail-row">
-                                        <td colspan="16">
+                                        <td colspan="18">
                                             <div class="elimination-detail-grid">
                                                 <div class="elimination-detail-section">
                                                     <h4>销售与毛利</h4>

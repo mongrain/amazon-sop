@@ -589,6 +589,18 @@ async function initDb() {
     }
 
     try {
+        await p.query('ALTER TABLE products ADD COLUMN link_group_id INT DEFAULT NULL COMMENT \'关联 ASIN 组 ID\' AFTER excel_row');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE products ADD INDEX idx_link_group (link_group_id)');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
         const agentRows = await p.query('SELECT COUNT(*) as cnt FROM ai_agents', { type: QueryTypes.SELECT });
         if (agentRows[0].cnt === 0) {
             const agents = [

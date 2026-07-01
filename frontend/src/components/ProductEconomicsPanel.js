@@ -71,6 +71,19 @@ export default {
             scheduleSave({ [field]: Number.isFinite(val) ? Math.max(1, val) : 1 });
         }
 
+        function onFieldBlur(field, event, manualField) {
+            const raw = event.target.value;
+            const val = raw === '' ? null : Number(raw);
+            const payload = { [field]: Number.isFinite(val) ? val : null };
+            if (manualField) payload[manualField] = true;
+            patchEconomics(payload);
+        }
+
+        function onIntBlur(field, event) {
+            const val = parseInt(event.target.value, 10);
+            patchEconomics({ [field]: Number.isFinite(val) ? Math.max(1, val) : 1 });
+        }
+
         function resetAuto(field, manualField) {
             patchEconomics({ [field]: null, [manualField]: false });
         }
@@ -82,7 +95,7 @@ export default {
 
         return {
             saving, saveError, inputs, computedVals, exchange,
-            displayVal, onFieldInput, onIntInput, resetAuto,
+            displayVal, onFieldInput, onFieldBlur, onIntInput, onIntBlur, resetAuto,
             fmtMoney, fmtPct, fmtNum
         };
     },
@@ -133,11 +146,11 @@ export default {
                     <div class="product-economics-fields">
                         <label class="product-economics-field">
                             <span>卖价 ($)</span>
-                            <input type="number" step="0.01" min="0" :value="inputs.selling_price_usd ?? ''" @input="onFieldInput('selling_price_usd', $event)">
+                            <input type="number" step="0.01" min="0" :value="inputs.selling_price_usd ?? ''" @blur="onFieldBlur('selling_price_usd', $event)">
                         </label>
                         <label class="product-economics-field">
                             <span>进价 (RMB)</span>
-                            <input type="number" step="0.01" min="0" :value="inputs.cost_price_rmb ?? ''" @input="onFieldInput('cost_price_rmb', $event)">
+                            <input type="number" step="0.01" min="0" :value="inputs.cost_price_rmb ?? ''" @blur="onFieldBlur('cost_price_rmb', $event)">
                         </label>
                         <div class="product-economics-readonly">
                             <span>进价 (USD)</span>
@@ -147,29 +160,29 @@ export default {
                             <span>头程 ($)</span>
                             <input type="number" step="0.0001" min="0"
                                 :value="displayVal('first_leg_usd', 'first_leg_manual', 'first_leg_used', 'first_leg_auto') ?? ''"
-                                @input="onFieldInput('first_leg_usd', $event, 'first_leg_manual')">
+                                @blur="onFieldBlur('first_leg_usd', $event, 'first_leg_manual')">
                             <button v-if="inputs.first_leg_manual" type="button" class="btn-link-reset" @click="resetAuto('first_leg_usd', 'first_leg_manual')">恢复自动</button>
                         </label>
                         <label class="product-economics-field">
                             <span>税 ($)</span>
-                            <input type="number" step="0.01" min="0" :value="inputs.tax_usd ?? 0" @input="onFieldInput('tax_usd', $event)">
+                            <input type="number" step="0.01" min="0" :value="inputs.tax_usd ?? 0" @blur="onFieldBlur('tax_usd', $event)">
                         </label>
                         <label class="product-economics-field">
                             <span>杂费 ($)</span>
-                            <input type="number" step="0.01" min="0" :value="inputs.misc_fee_usd ?? ''" @input="onFieldInput('misc_fee_usd', $event)">
+                            <input type="number" step="0.01" min="0" :value="inputs.misc_fee_usd ?? ''" @blur="onFieldBlur('misc_fee_usd', $event)">
                         </label>
                         <label class="product-economics-field product-economics-field-with-reset">
                             <span>广告支出 ($)</span>
                             <input type="number" step="0.0001" min="0"
                                 :value="displayVal('ad_spend_usd', 'ad_spend_manual', 'ad_spend_used', 'ad_spend_auto') ?? ''"
-                                @input="onFieldInput('ad_spend_usd', $event, 'ad_spend_manual')">
+                                @blur="onFieldBlur('ad_spend_usd', $event, 'ad_spend_manual')">
                             <button v-if="inputs.ad_spend_manual" type="button" class="btn-link-reset" @click="resetAuto('ad_spend_usd', 'ad_spend_manual')">恢复自动</button>
                         </label>
                         <label class="product-economics-field product-economics-field-with-reset">
                             <span>尾程+Fee ($)</span>
                             <input type="number" step="0.0001" min="0"
                                 :value="displayVal('last_mile_fee_usd', 'last_mile_fee_manual', 'last_mile_fee_used', 'last_mile_fee_auto') ?? ''"
-                                @input="onFieldInput('last_mile_fee_usd', $event, 'last_mile_fee_manual')">
+                                @blur="onFieldBlur('last_mile_fee_usd', $event, 'last_mile_fee_manual')">
                             <button v-if="inputs.last_mile_fee_manual" type="button" class="btn-link-reset" @click="resetAuto('last_mile_fee_usd', 'last_mile_fee_manual')">恢复自动</button>
                         </label>
                         <div class="product-economics-readonly product-economics-hint">
@@ -178,7 +191,7 @@ export default {
                         </div>
                         <label class="product-economics-field">
                             <span>订单速度</span>
-                            <input type="number" step="0.01" min="0" :value="inputs.order_velocity ?? ''" @input="onFieldInput('order_velocity', $event)">
+                            <input type="number" step="0.01" min="0" :value="inputs.order_velocity ?? ''" @blur="onFieldBlur('order_velocity', $event)">
                         </label>
                     </div>
                 </div>

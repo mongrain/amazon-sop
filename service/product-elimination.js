@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 const { getProductEconomics } = require('../product-economics');
 const { mapSiteFromLabel } = require('../product-sites');
+const { fetchAsinLinkMap, enrichResultsWithGroupSales, collapseLinkGroupResults } = require('./product-links');
 
 const HEADER_ALIASES = {
     store: ['店铺'],
@@ -377,12 +378,12 @@ function sumQuantity(orders) {
 }
 
 /** 销售额相同并列同一名次，下一档跳过并列占用的序号（1,2,2,4 而非 1,2,2,3） */
-function assignCompetitionSalesRanks(items) {
-    const list = [...items].sort((a, b) => (b.salesAmount || 0) - (a.salesAmount || 0));
+function assignCompetitionSalesRanks(items, salesField = 'salesAmount') {
+    const list = [...items].sort((a, b) => (b[salesField] || 0) - (a[salesField] || 0));
     let prevSales = null;
     let rank = 0;
     for (let i = 0; i < list.length; i++) {
-        const sales = list[i].salesAmount || 0;
+        const sales = list[i][salesField] || 0;
         if (prevSales === null || sales !== prevSales) {
             rank = i + 1;
             prevSales = sales;
@@ -889,6 +890,7 @@ async function analyzeProductElimination(input, dbCtx) {
     }
 
     const catalogBySite = await fetchCatalogProductsBySites(sites, dbCtx);
+    const asinLinkMap = await fetchAsinLinkMap(dbCtx);
     const dateRange = getOrderDateRange(orders);
     const referenceDate = dateRange.max || toDateString(new Date());
     const caches = { cost: new Map(), metrics: new Map() };
@@ -934,30 +936,33 @@ async function analyzeProductElimination(input, dbCtx) {
         }
     }
 
+    enrichResultsWithGroupSales(results, asinLinkMap);
+    const displayResults = collapseLinkGroupResults(results, asinLinkMap);
+
     const rankBySite = new Map();
-    for (const r of results) {
+    for (const r of displayResults) {
         if (!rankBySite.has(r.site)) rankBySite.set(r.site, []);
         rankBySite.get(r.site).push(r);
     }
     for (const [, list] of rankBySite) {
-        assignCompetitionSalesRanks(list);
+        assignCompetitionSalesRanks(list, 'groupSalesAmount');
     }
 
-    results.sort((a, b) => {
+    displayResults.sort((a, b) => {
         if (a.site !== b.site) return a.site.localeCompare(b.site, 'zh-CN');
         return a.salesRank - b.salesRank;
     });
 
     const periodMeta = buildPeriodComparison(orders, referenceDate);
-    const withOrdersCount = results.filter(r => r.hasOrders).length;
-    const withoutOrdersCount = results.filter(r => !r.hasOrders).length;
+    const withOrdersCount = displayResults.filter(r => r.hasOrders).length;
+    const withoutOrdersCount = displayResults.filter(r => !r.hasOrders).length;
 
     return {
         analyzedAt: new Date().toISOString(),
         sourceFile: input.sourceFile || null,
         totalOrders: orders.length,
-        totalProducts: results.length,
-        catalogProductCount: results.filter(r => r.inCatalog).length,
+        totalProducts: displayResults.length,
+        catalogProductCount: displayResults.filter(r => r.inCatalog).length,
         withOrdersCount,
         withoutOrdersCount,
         skippedCanceled,
@@ -972,7 +977,7 @@ async function analyzeProductElimination(input, dbCtx) {
         periodLabel: periodMeta.periodLabel,
         sites,
         stores: sites,
-        results
+        results: displayResults
     };
 }
 

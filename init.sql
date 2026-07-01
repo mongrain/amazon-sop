@@ -12,11 +12,13 @@ CREATE TABLE IF NOT EXISTS products (
     status VARCHAR(20) DEFAULT '待处理',
     overall_progress DOUBLE DEFAULT 0,
     excel_row INT DEFAULT NULL,
+    link_group_id INT DEFAULT NULL COMMENT '关联 ASIN 组 ID，同组产品淘汰分析时合并销量',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_asin (asin),
     INDEX idx_category (category),
-    INDEX idx_status (status)
+    INDEX idx_status (status),
+    INDEX idx_link_group (link_group_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- SOP模块表

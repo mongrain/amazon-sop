@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { fmtDateTime, getApiError, http, pct } from '@/utils/index.js';
 import { openViewer } from '@/utils/viewer.js';
@@ -54,6 +54,15 @@ export default {
         const versionError = ref('');
         const versions = ref([]);
         const versionsLoading = ref(false);
+
+        const relatedProducts = ref([]);
+        const relatedSearchQuery = ref('');
+        const relatedSearchResults = ref([]);
+        const relatedSearchOpen = ref(false);
+        const relatedSearchLoading = ref(false);
+        const relatedError = ref('');
+        const relatedLoading = ref(false);
+        let relatedSearchTimer = null;
 
         const statusOptions = ['待处理', '进行中', '已完成', '跳过', '已放弃'];
 
@@ -120,6 +129,7 @@ export default {
                 recordMap.value = data.recordMap || {};
                 moduleProgress.value = data.moduleProgress || {};
                 economics.value = data.economics || null;
+                await loadRelatedProducts();
             } catch (e) {
                 alert(getApiError(e, '加载失败'));
             } finally {
@@ -329,12 +339,126 @@ export default {
             economics.value = payload;
         }
 
+        async function loadRelatedProducts() {
+            if (!asin.value) return;
+            try {
+                const { data } = await http.get('/api/product/' + encodeURIComponent(asin.value) + '/related');
+                relatedProducts.value = data.related || [];
+            } catch (e) {
+                relatedProducts.value = [];
+            }
+        }
+
+        const relatedAsinSet = computed(() => new Set(relatedProducts.value.map(p => p.asin)));
+
+        function closeRelatedSearchDropdown() {
+            relatedSearchOpen.value = false;
+        }
+
+        function onRelatedSearchInput() {
+            relatedError.value = '';
+            if (relatedSearchTimer) clearTimeout(relatedSearchTimer);
+            const q = relatedSearchQuery.value.trim();
+            if (!q) {
+                relatedSearchResults.value = [];
+                relatedSearchOpen.value = false;
+                return;
+            }
+            relatedSearchTimer = setTimeout(() => searchRelatedProducts(q), 300);
+        }
+
+        async function searchRelatedProducts(q) {
+            relatedSearchLoading.value = true;
+            try {
+                const { data } = await http.get('/api/products/search', {
+                    params: { q, limit: 10, exclude: asin.value }
+                });
+                relatedSearchResults.value = (data.products || []).filter(
+                    p => !relatedAsinSet.value.has(p.asin)
+                );
+                relatedSearchOpen.value = relatedSearchResults.value.length > 0;
+            } catch (e) {
+                relatedSearchResults.value = [];
+                relatedSearchOpen.value = false;
+            } finally {
+                relatedSearchLoading.value = false;
+            }
+        }
+
+        async function linkRelatedAsin(relatedAsin) {
+            relatedError.value = '';
+            relatedLoading.value = true;
+            try {
+                const { data } = await http.post(
+                    '/api/product/' + encodeURIComponent(asin.value) + '/related',
+                    { relatedAsin }
+                );
+                relatedProducts.value = data.related || [];
+                relatedSearchQuery.value = '';
+                relatedSearchResults.value = [];
+                relatedSearchOpen.value = false;
+            } catch (e) {
+                relatedError.value = getApiError(e, '关联失败');
+            } finally {
+                relatedLoading.value = false;
+            }
+        }
+
+        async function selectRelatedProduct(item) {
+            if (!item || !item.asin) return;
+            await linkRelatedAsin(item.asin);
+        }
+
+        async function addRelatedProduct() {
+            const query = relatedSearchQuery.value.trim().toUpperCase();
+            if (!query) {
+                relatedError.value = '请搜索并选择产品，或直接输入 ASIN';
+                return;
+            }
+            await linkRelatedAsin(query);
+        }
+
+        function onRelatedSearchBlur() {
+            setTimeout(closeRelatedSearchDropdown, 150);
+        }
+
+        async function removeRelatedProduct(relatedAsin) {
+            if (!confirm('确认解除与 ' + relatedAsin + ' 的关联？')) return;
+            relatedLoading.value = true;
+            relatedError.value = '';
+            try {
+                const { data } = await http.delete('/api/product/' + encodeURIComponent(asin.value) + '/related/' + encodeURIComponent(relatedAsin));
+                relatedProducts.value = data.related || [];
+            } catch (e) {
+                relatedError.value = getApiError(e, '解除关联失败');
+            } finally {
+                relatedLoading.value = false;
+            }
+        }
+
         onMounted(() => {
             loadData();
             document.addEventListener('paste', onPaste);
         });
+        watch(
+            () => route.params.asin,
+            (newAsin) => {
+                const next = newAsin || '';
+                if (!next || next === asin.value) return;
+                asin.value = next;
+                relatedSearchQuery.value = '';
+                relatedSearchResults.value = [];
+                relatedSearchOpen.value = false;
+                relatedError.value = '';
+                collapsedGroups.value = {};
+                expandedInstructions.value = new Set();
+                timeDisplays.value = {};
+                loadData();
+            }
+        );
         onUnmounted(() => {
             document.removeEventListener('paste', onPaste);
+            if (relatedSearchTimer) clearTimeout(relatedSearchTimer);
         });
 
         return {
@@ -350,7 +474,10 @@ export default {
             updateProductStatus, updateProductSite, updateProductCategory,
             openEditModal, closeEditModal, saveEditProduct, deleteProduct,
             openVersionModal, closeVersionModal, loadVersions, createVersion, deleteVersion,
-            fmtTime, escapeHtml, openViewer, onEconomicsUpdated
+            fmtTime, escapeHtml, openViewer, onEconomicsUpdated,
+            relatedProducts, relatedSearchQuery, relatedSearchResults, relatedSearchOpen,
+            relatedSearchLoading, relatedError, relatedLoading,
+            onRelatedSearchInput, onRelatedSearchBlur, selectRelatedProduct, addRelatedProduct, removeRelatedProduct
         };
     },
     template: `<div v-if="loading" style="text-align:center; padding:40px; color:#999;">加载中...</div>
@@ -393,7 +520,67 @@ export default {
                     </div>
                 </div>
             </div>
-            <ProductEconomicsPanel :asin="asin" :economics="economics" @updated="onEconomicsUpdated" />
+            <ProductEconomicsPanel :key="asin" :asin="asin" :economics="economics" @updated="onEconomicsUpdated" />
+            <div class="module-card mb-4">
+                <div class="module-header" style="cursor:default;">
+                    <div class="module-name">关联 ASIN</div>
+                    <span class="text-xs text-[#909399]">同组 ASIN 在淘汰分析时合并销量排名</span>
+                </div>
+                <div class="module-body">
+                    <div v-if="relatedProducts.length" class="mb-3">
+                        <div v-for="rp in relatedProducts" :key="rp.asin" class="flex items-center gap-2 mb-2">
+                            <router-link :to="'/product/' + rp.asin"><code>{{ rp.asin }}</code></router-link>
+                            <span class="text-sm text-[#606266]">{{ rp.name || '—' }}</span>
+                            <span v-if="rp.status" class="status-badge">{{ rp.status }}</span>
+                            <button type="button" class="btn-secondary px-2 py-0.5 text-xs" :disabled="relatedLoading" @click="removeRelatedProduct(rp.asin)">解除关联</button>
+                        </div>
+                    </div>
+                    <div v-else class="text-sm text-[#909399] mb-3">暂无关联 ASIN</div>
+                    <div class="flex items-start gap-2">
+                        <div class="related-search-wrap" style="position:relative; flex:1; max-width:420px;">
+                            <input
+                                v-model="relatedSearchQuery"
+                                type="text"
+                                class="search-input w-full"
+                                placeholder="搜索产品名称或 ASIN，从列表中选择"
+                                :disabled="relatedLoading"
+                                @input="onRelatedSearchInput"
+                                @focus="onRelatedSearchInput"
+                                @blur="onRelatedSearchBlur"
+                                @keyup.enter="addRelatedProduct"
+                            />
+                            <div
+                                v-if="relatedSearchOpen"
+                                class="related-search-dropdown"
+                                style="position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:20; background:#fff; border:1px solid #e4e7ed; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.08); max-height:240px; overflow-y:auto;"
+                            >
+                                <button
+                                    v-for="item in relatedSearchResults"
+                                    :key="item.asin"
+                                    type="button"
+                                    class="related-search-item"
+                                    style="display:block; width:100%; text-align:left; padding:10px 12px; border:none; background:transparent; cursor:pointer; border-bottom:1px solid #f0f0f0;"
+                                    :disabled="relatedLoading"
+                                    @mousedown.prevent="selectRelatedProduct(item)"
+                                >
+                                    <div class="text-sm text-[#303133]">{{ item.name || '—' }}</div>
+                                    <div class="text-xs text-[#909399] mt-0.5">
+                                        <code>{{ item.asin }}</code>
+                                        <span v-if="item.seq"> · {{ item.seq }}</span>
+                                        <span v-if="item.status"> · {{ item.status }}</span>
+                                    </div>
+                                </button>
+                            </div>
+                            <p v-if="relatedSearchLoading" class="text-xs text-[#909399] mt-1">搜索中…</p>
+                            <p v-else-if="relatedSearchQuery.trim() && !relatedSearchOpen && !relatedSearchLoading" class="text-xs text-[#909399] mt-1">未找到匹配产品，按 Enter 可尝试按 ASIN 直接关联</p>
+                        </div>
+                        <button type="button" class="btn-primary px-3 py-1 text-sm shrink-0" :disabled="relatedLoading" @click="addRelatedProduct">
+                            {{ relatedLoading ? '处理中…' : '添加关联' }}
+                        </button>
+                    </div>
+                    <p v-if="relatedError" class="text-[#f56c6c] text-sm mt-2">{{ relatedError }}</p>
+                </div>
+            </div>
             <div class="sop-grid">
                 <div v-for="module in modules" :key="module.id" class="sop-card">
                     <div class="sop-card-header">
