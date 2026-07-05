@@ -63,7 +63,10 @@ async function saveExchangeRate(runSql, rate) {
 async function ensureProduct(asin, name) {
     let product = await queryOne('SELECT id, name FROM products WHERE asin = ?', [asin]);
     if (!product) {
-        await runSql('INSERT INTO products (asin, name) VALUES (?, ?)', [asin, name || null]);
+        await runSql(
+            'INSERT INTO products (asin, name, operating_started_at) VALUES (?, ?, NOW())',
+            [asin, name || null]
+        );
         product = await queryOne('SELECT id, name FROM products WHERE asin = ?', [asin]);
         await ensureRecordsForProduct(product.id);
         await recalculateProductProgress(product.id);

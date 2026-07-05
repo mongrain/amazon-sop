@@ -1019,7 +1019,7 @@ app.post('/api/product', async (req, res) => {
         }
 
         await runSql(
-            'INSERT INTO products (asin, name, category, seq) VALUES (?, ?, ?, ?)',
+            'INSERT INTO products (asin, name, category, seq, operating_started_at) VALUES (?, ?, ?, ?, NOW())',
             [asin, name || null, category || null, siteVal]
         );
         const product = await queryOne('SELECT id, seq FROM products WHERE asin = ?', [asin]);

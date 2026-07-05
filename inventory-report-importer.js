@@ -145,7 +145,7 @@ async function importInventoryReportTxt() {
                 const seq = row.site || null;
                 const status = row.productStatus || '待处理';
                 await runSql(
-                    'INSERT INTO products (asin, name, seq, status, listed_at) VALUES (?, ?, ?, ?, ?)',
+                    'INSERT INTO products (asin, name, seq, status, listed_at, operating_started_at) VALUES (?, ?, ?, ?, ?, NOW())',
                     [asin, name, seq, status, row.openDate]
                 );
                 const created = await queryOne(

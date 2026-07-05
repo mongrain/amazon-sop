@@ -79,7 +79,7 @@ async function importProductListExcel() {
             const product = await queryOne('SELECT id, name, seq FROM products WHERE asin = ?', [asin]);
             if (!product) {
                 await runSql(
-                    'INSERT INTO products (asin, name, seq) VALUES (?, ?, ?)',
+                    'INSERT INTO products (asin, name, seq, operating_started_at) VALUES (?, ?, ?, NOW())',
                     [asin, name, site]
                 );
                 const created = await queryOne('SELECT id FROM products WHERE asin = ?', [asin]);

@@ -630,6 +630,17 @@ async function initDb() {
     }
 
     try {
+        await p.query(`
+            UPDATE products
+            SET operating_started_at = created_at
+            WHERE operating_started_at IS NULL
+              AND created_at IS NOT NULL
+        `);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
         await p.query('ALTER TABLE products DROP COLUMN operating_days');
     } catch (e) {
         if (!isSafeMigrationError(e)) {}

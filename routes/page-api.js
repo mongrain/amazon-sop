@@ -189,7 +189,12 @@ function registerProtectedPageApi(app, ctx) {
             }
 
             let products = await queryAll(
-                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row, listed_at, operating_started_at FROM products WHERE ${whereSql} ORDER BY (status = '已放弃') ASC, created_at ASC LIMIT ? OFFSET ?`,
+                `SELECT id, asin, name, category, seq, status, overall_progress, excel_row, listed_at,
+                        COALESCE(operating_started_at, created_at) AS operating_started_at
+                 FROM products
+                 WHERE ${whereSql}
+                 ORDER BY (status = '已放弃') ASC, created_at ASC
+                 LIMIT ? OFFSET ?`,
                 [...filterParams, pageSize, offset]
             );
 
@@ -255,7 +260,10 @@ function registerProtectedPageApi(app, ctx) {
     app.get('/api/product/:asin', async (req, res) => {
         try {
             const { asin } = req.params;
-            const product = await queryOne('SELECT * FROM products WHERE asin = ?', [asin]);
+            const product = await queryOne(
+                'SELECT *, COALESCE(operating_started_at, created_at) AS operating_started_at FROM products WHERE asin = ?',
+                [asin]
+            );
             if (!product) return res.status(404).json({ error: 'Product not found' });
 
             const allModules = await getModulesWithItems();

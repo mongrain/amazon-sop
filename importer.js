@@ -81,13 +81,14 @@ async function importExcel() {
         // Insert or update product (MySQL ON DUPLICATE KEY UPDATE)
         try {
             const productResult = await runSql(`
-                INSERT INTO products (seq, asin, name, category, excel_row)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO products (seq, asin, name, category, excel_row, operating_started_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
                 ON DUPLICATE KEY UPDATE
                     id = LAST_INSERT_ID(id),
                     name = VALUES(name),
                     category = VALUES(category),
                     excel_row = VALUES(excel_row),
+                    operating_started_at = COALESCE(operating_started_at, created_at),
                     updated_at = NOW()
             `, [String(seq), asinStr, String(name), String(category), json.indexOf(row) + 1]);
             stats.products_added++;
