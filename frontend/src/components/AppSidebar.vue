@@ -9,8 +9,8 @@ defineEmits(['logout']);
 <template>
     <aside class="sidebar">
         <div class="sidebar-header">
-            <h2>Amazon SOP</h2>
-            <p>运营管理系统</p>
+            <h2>Amazon</h2>
+            <p>OMC</p>
         </div>
         <nav class="sidebar-nav">
             <router-link to="/dashboard" :class="{ active: active === 'dashboard' }">产品看板</router-link>
@@ -26,7 +26,7 @@ defineEmits(['logout']);
             <router-link to="/google-trends" :class="{ active: active === 'google_trends' }">Google Trends</router-link>
             <router-link to="/amc-ads" :class="{ active: active === 'amc_ads' }">AMC 广告</router-link>
             <router-link to="/product-elimination" :class="{ active: active === 'product_elimination' }">产品淘汰分析</router-link>
-            <router-link to="/knowledge" :class="{ active: active === 'knowledge' }">知识库</router-link>
+            <router-link to="/knowledge" :class="{ active: active === 'knowledge' }">焚诀库</router-link>
             <router-link to="/sop" :class="{ active: active === 'sop' }">SOP模板</router-link>
             <router-link to="/import" :class="{ active: active === 'import' }">导入数据</router-link>
         </nav>

@@ -48,7 +48,7 @@ export default {
     template: `
         <div class="login-card">
             <div class="login-title">Amazon SOP</div>
-            <div class="login-desc">运营管理系统 · 请登录</div>
+            <div class="login-desc">OMC · 请登录</div>
             <div v-if="defaultAdminHint" class="login-hint">
                 首次部署默认账号：<strong>{{ defaultAdminHint.name }}</strong> /
                 <strong>{{ defaultAdminHint.password }}</strong><br>

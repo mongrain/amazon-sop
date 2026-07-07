@@ -36,7 +36,7 @@ const layoutChildren = [
     { path: 'sop', name: 'sop', component: SopView, meta: { active: 'sop', title: 'SOP模板' } },
     { path: 'import', name: 'import', component: ImportView, meta: { active: 'import', title: '导入数据' } },
     { path: 'annual-activities', name: 'annual-activities', component: AnnualActivitiesView, meta: { active: 'annual_activities', title: '年度活动' } },
-    { path: 'knowledge', name: 'knowledge', component: KnowledgeView, meta: { active: 'knowledge', title: '知识库' } },
+    { path: 'knowledge', name: 'knowledge', component: KnowledgeView, meta: { active: 'knowledge', title: '焚诀' } },
     { path: 'knowledge/new', name: 'knowledge-new', component: KnowledgeDocView, meta: { active: 'knowledge', title: '新建文档' } },
     { path: 'knowledge/:id', name: 'knowledge-doc', component: KnowledgeDocView, meta: { active: 'knowledge', title: '文档' } },
     { path: 'daily-rants', name: 'daily-rants', component: DailyRantsView, meta: { active: 'daily_rants', title: '碎碎念' } },
@@ -88,7 +88,7 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
-    document.title = (to.meta.title ? to.meta.title + ' - ' : '') + 'Amazon 运营SOP管理系统';
+    document.title = (to.meta.title ? to.meta.title + ' - ' : '') + 'Amazon OMC';
 
     if (to.meta.public) {
         try {

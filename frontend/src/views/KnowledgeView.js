@@ -83,7 +83,7 @@ export default {
     template: `<div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                     <div>
-                        <h1>知识库</h1>
+                        <h1>焚诀库</h1>
                         <div class="page-desc">Write and save operational documents, support direct pasting of Word / Excel / table content</div>
                         <form @submit.prevent="search" class="search-form" style="margin-top:12px;">
                             <input type="text" v-model="keyword" class="search-input" placeholder="搜索标题或正文">

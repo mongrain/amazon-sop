@@ -348,7 +348,7 @@ export default {
         }
 
         function onTitleInput() {
-            document.title = pageTitle.value + ' - Amazon 运营SOP管理系统';
+            document.title = pageTitle.value + ' - Amazon OMC';
             enableDraftSaveOnEdit();
         }
         function onContentInput() {
@@ -411,7 +411,7 @@ export default {
         onMounted(async () => {
             syncBodyModeClass();
             await loadDoc();
-            document.title = pageTitle.value + ' - Amazon 运营SOP管理系统';
+            document.title = pageTitle.value + ' - Amazon OMC';
             document.addEventListener('paste', onPaste);
             if (isNew.value) {
                 startDraftAutoSave();
@@ -433,7 +433,7 @@ export default {
     template: `<div v-if="loading" style="text-align:center; padding:40px; color:#999;">加载中...</div>
         <template v-else>
             <div class="page-header">
-                <router-link to="/knowledge" class="back-link">&larr; 返回知识库</router-link>
+                <router-link to="/knowledge" class="back-link">&larr; 返回焚诀库</router-link>
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                     <div style="flex:1; min-width:0;">
                         <div class="knowledge-preview">
