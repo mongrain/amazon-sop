@@ -79,11 +79,12 @@ function analyzeTrend(points) {
 }
 
 function buildSparkline(points, trend) {
-    const windowPoints = points.slice(-TREND_WINDOW);
+    const windowPoints = points
+        .slice(-TREND_WINDOW)
+        .filter(point => Number.isFinite(Number(point.searches)));
     if (windowPoints.length < 2) return null;
 
-    const values = windowPoints.map(point => Number(point.searches)).filter(Number.isFinite);
-    if (values.length < 2) return null;
+    const values = windowPoints.map(point => Number(point.searches));
 
     let yMin = Math.min(...values);
     let yMax = Math.max(...values);
@@ -96,16 +97,46 @@ function buildSparkline(points, trend) {
     const plotH = SPARKLINE.height - SPARKLINE.pad * 2;
     const xStep = plotW / (values.length - 1);
 
-    const path = values.map((value, index) => {
+    const plotPoints = windowPoints.map((point, index) => {
+        const value = values[index];
         const ratio = (value - yMin) / (yMax - yMin);
         const x = SPARKLINE.pad + xStep * index;
         const y = SPARKLINE.pad + plotH * (1 - ratio);
-        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+        return {
+            x,
+            y,
+            date: point.date,
+            formattedTime: point.formattedTime || point.date,
+            searches: value
+        };
+    });
+
+    const path = plotPoints.map((point, index) => {
+        return `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
     }).join(' ');
 
     const stroke = trend === 'up' ? '#67c23a' : trend === 'down' ? '#f56c6c' : '#909399';
 
-    return { path, stroke };
+    return { path, stroke, plotPoints };
+}
+
+function findNearestPlotPoint(svg, plotPoints, clientX) {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return null;
+
+    const svgX = ((clientX - rect.left) / rect.width) * SPARKLINE.width;
+    let nearest = plotPoints[0];
+    let minDist = Infinity;
+
+    for (const point of plotPoints) {
+        const dist = Math.abs(point.x - svgX);
+        if (dist < minDist) {
+            minDist = dist;
+            nearest = point;
+        }
+    }
+
+    return nearest;
 }
 
 function buildRow(item) {
@@ -132,6 +163,8 @@ export default {
         const error = ref('');
         const batchResult = ref(null);
 
+        const sparklineTooltip = ref(null);
+
         const rowList = computed(() => {
             if (!batchResult.value || !batchResult.value.results) return [];
             return batchResult.value.results.map(buildRow);
@@ -145,10 +178,31 @@ export default {
             };
         });
 
+        function onSparklineMove(event, row) {
+            const plotPoints = row.sparkline?.plotPoints;
+            if (!plotPoints?.length) return;
+
+            const nearest = findNearestPlotPoint(event.currentTarget, plotPoints, event.clientX);
+            if (!nearest) return;
+
+            sparklineTooltip.value = {
+                keyword: row.keyword,
+                label: nearest.formattedTime || nearest.date,
+                value: nearest.searches,
+                x: nearest.x,
+                y: nearest.y
+            };
+        }
+
+        function clearSparklineTooltip() {
+            sparklineTooltip.value = null;
+        }
+
         async function searchTrends() {
             error.value = '';
             loading.value = true;
             batchResult.value = null;
+            sparklineTooltip.value = null;
 
             try {
                 const { data } = await http.post('/api/google-trends', {
@@ -174,6 +228,9 @@ export default {
             summary,
             formatNumber,
             searchTrends,
+            sparklineTooltip,
+            onSparklineMove,
+            clearSparklineTooltip,
             SPARKLINE
         };
     },
@@ -245,23 +302,49 @@ export default {
                                 </template>
                             </div>
                             <div class="trends-row-right">
-                                <svg
+                                <div
                                     v-if="row.sparkline"
-                                    class="trends-sparkline"
-                                    :viewBox="'0 0 ' + SPARKLINE.width + ' ' + SPARKLINE.height"
-                                    preserveAspectRatio="none"
-                                    role="img"
-                                    :aria-label="row.keyword + ' 趋势'"
+                                    class="trends-sparkline-wrap"
+                                    @mouseleave="clearSparklineTooltip"
                                 >
-                                    <path
-                                        :d="row.sparkline.path"
-                                        fill="none"
-                                        :stroke="row.sparkline.stroke"
-                                        stroke-width="1.8"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                    />
-                                </svg>
+                                    <svg
+                                        class="trends-sparkline"
+                                        :viewBox="'0 0 ' + SPARKLINE.width + ' ' + SPARKLINE.height"
+                                        preserveAspectRatio="none"
+                                        role="img"
+                                        :aria-label="row.keyword + ' 趋势'"
+                                        @mousemove="onSparklineMove($event, row)"
+                                    >
+                                        <path
+                                            :d="row.sparkline.path"
+                                            fill="none"
+                                            :stroke="row.sparkline.stroke"
+                                            stroke-width="1.8"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        />
+                                        <circle
+                                            v-if="sparklineTooltip && sparklineTooltip.keyword === row.keyword"
+                                            :cx="sparklineTooltip.x"
+                                            :cy="sparklineTooltip.y"
+                                            r="2.8"
+                                            :fill="row.sparkline.stroke"
+                                            stroke="#fff"
+                                            stroke-width="1.2"
+                                        />
+                                    </svg>
+                                    <div
+                                        v-if="sparklineTooltip && sparklineTooltip.keyword === row.keyword"
+                                        class="trends-sparkline-tooltip"
+                                        :style="{
+                                            left: (sparklineTooltip.x / SPARKLINE.width * 100) + '%',
+                                            top: (sparklineTooltip.y / SPARKLINE.height * 100) + '%'
+                                        }"
+                                    >
+                                        <div class="trends-sparkline-tooltip-date">{{ sparklineTooltip.label }}</div>
+                                        <div class="trends-sparkline-tooltip-value">热度 {{ formatNumber(sparklineTooltip.value) }}</div>
+                                    </div>
+                                </div>
                                 <span v-else-if="!row.error" class="trends-sparkline-empty">—</span>
                             </div>
                         </div>

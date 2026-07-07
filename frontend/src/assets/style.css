@@ -1001,7 +1001,18 @@ body {
 .trends-change { font-size: 12px; font-weight: 500; }
 .trends-row-error { font-size: 13px; color: var(--danger); }
 .trends-row-right { flex-shrink: 0; width: 148px; display: flex; justify-content: flex-end; align-items: center; }
-.trends-sparkline { width: 132px; height: 40px; display: block; }
+.trends-sparkline-wrap { position: relative; width: 132px; height: 40px; }
+.trends-sparkline { width: 132px; height: 40px; display: block; cursor: crosshair; }
+.trends-sparkline-tooltip {
+    position: absolute; z-index: 10; pointer-events: none;
+    transform: translate(-50%, calc(-100% - 8px));
+    padding: 6px 8px; border-radius: 6px;
+    background: rgba(30, 30, 30, 0.92); color: #fff;
+    font-size: 11px; line-height: 1.4; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.trends-sparkline-tooltip-date { opacity: 0.85; margin-bottom: 2px; }
+.trends-sparkline-tooltip-value { font-weight: 600; }
 .trends-sparkline-empty { color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 640px) {
     .trends-search-row { flex-direction: column; }
