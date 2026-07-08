@@ -21,7 +21,7 @@ onMounted(async () => {
 watch(
     () => route.meta.title,
     (title) => {
-        document.title = (title ? title + ' - ' : '') + 'Amazon 运营SOP管理系统';
+        document.title = (title ? title + ' - ' : '') + 'Amazon OMC';
     },
     { immediate: true }
 );

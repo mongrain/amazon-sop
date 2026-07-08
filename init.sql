@@ -1,4 +1,4 @@
--- Amazon 运营SOP管理系统 - MySQL 初始化脚本
+-- Amazon OMC - MySQL 初始化脚本
 -- 使用前请先创建数据库: CREATE DATABASE sop_system DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci;
 -- 然后执行: USE sop_system; 再运行本文件
 

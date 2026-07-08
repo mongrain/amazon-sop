@@ -1672,7 +1672,7 @@ app.use((err, req, res, next) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log('\n' + '='.repeat(50));
-    console.log('  Amazon 运营SOP管理系统');
+    console.log('  Amazon OMC');
     console.log(`  http://localhost:${PORT}`);
     console.log('='.repeat(50) + '\n');
 });
