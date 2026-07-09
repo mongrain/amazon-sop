@@ -1,4 +1,9 @@
 const { siderAi, getFileId } = require('../service/sider.ai');
+const fs = require('fs');
+// 读取sider_room_db.json文件
+const siderRoomDb = JSON.parse(fs.readFileSync(`${__dirname}/sider_room_db.json`, 'utf8'));
+console.log(siderRoomDb);
+
 
 async function testSiderAi() {
   const fileId1 = await getFileId('C:/Users/ASUS/Desktop/axa.jpeg');
@@ -24,8 +29,13 @@ async function testSiderAi() {
 `;
   console.log(fileId1);
   console.log(fileId2);
-  const result = await siderAi(fileId1, fileId2, prompt);
+  const result = await siderAi(fileId1, fileId2, prompt, siderRoomDb.cid, siderRoomDb.nextMessageId);
   console.log(result);
+  // 写入sider_room_db.json文件
+  fs.writeFileSync(`${__dirname}/sider_room_db.json`, JSON.stringify({
+    cid: result.cid,
+    nextMessageId: result.nextMessageId
+  }, null, 2));
 }
 
 testSiderAi();
