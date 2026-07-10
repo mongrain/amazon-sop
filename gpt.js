@@ -1,5 +1,6 @@
 require('dotenv').config();
 const axios = require('axios');
+const { handler } = require('./service/imagediff');
 
 const GPT_API_URL = process.env.GPT_API_URL || 'http://localhost:8000/v1/chat/completions';
 const GPT_API_KEY = process.env.GPT_API_KEY || 'eb3bf85f539499df36e2eec15669d57e';
@@ -16,7 +17,8 @@ function parseGptJsonContent(content) {
     return JSON.parse(jsonText);
 }
 
-async function compareStorefrontImages(imageUrlA, imageUrlB) {
+// api 模式，调用 GPT 的 API 接口
+async function compareStorefrontImagesByApi(imageUrlA, imageUrlB) {
     const payload = {
         model: GPT_MODEL,
         messages: [
@@ -55,6 +57,16 @@ async function compareStorefrontImages(imageUrlA, imageUrlB) {
         change_details: Array.isArray(parsed.change_details) ? parsed.change_details : [],
         summary: String(parsed.summary || '').trim()
     };
+}
+
+/**
+ * 破解版模式 sider ai
+ * @param {*} imageUrlA 
+ * @param {*} imageUrlB 
+ */
+async function compareStorefrontImagesBySiderAi(imageUrlA, imageUrlB) {
+    const result = await handler(imageUrlA, imageUrlB);
+    return result;
 }
 
 async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL } = {}) {
@@ -121,4 +133,4 @@ async function chatCompletionText(systemPrompt, userContent, { model = GPT_MODEL
     return String(content).trim();
 }
 
-module.exports = { compareStorefrontImages, parseGptJsonContent, chatCompletionJson, chatCompletionText };
+module.exports = { compareStorefrontImages: compareStorefrontImagesBySiderAi, parseGptJsonContent, chatCompletionJson, chatCompletionText };

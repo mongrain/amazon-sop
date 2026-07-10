@@ -169,12 +169,14 @@ function siderAi(fileId1, fileId2, prompt, cid = '', parentMessageId = '') {
 
     try {
       const result = JSON.parse(fullText.slice(start, end + 1));
+      console.log('result', result);
       resolve({
-        result,
+        content: result,
         cid,
         nextMessageId
       });
     } catch (e) {
+      console.log('e', e);
       reject(e);
     }
   });
