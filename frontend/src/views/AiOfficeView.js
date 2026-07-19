@@ -116,6 +116,28 @@ export default {
             }
         }
 
+        async function reprocessTask(task) {
+            if (!confirm('确认重新处理任务「' + task.title + '」？已完成的子任务会保留，仅重跑未完成/失败的任务。')) return;
+            error.value = '';
+            try {
+                await http.post('/api/ai-office/tasks/' + task.id + '/reprocess');
+                await loadData();
+            } catch (e) {
+                error.value = getApiError(e, '重新处理失败');
+            }
+        }
+
+        async function deleteTask(task) {
+            if (!confirm('确认删除任务「' + task.title + '」？子任务与日志将一并删除，不可恢复。')) return;
+            error.value = '';
+            try {
+                await http.delete('/api/ai-office/tasks/' + task.id);
+                await loadData();
+            } catch (e) {
+                error.value = getApiError(e, '删除失败');
+            }
+        }
+
         function filterByAgent(agentId) {
             filterAgentId.value = filterAgentId.value === String(agentId) ? '' : String(agentId);
             loadData();
@@ -142,6 +164,8 @@ export default {
             statusClass,
             loadData,
             createTask,
+            reprocessTask,
+            deleteTask,
             filterByAgent
         };
     },
@@ -205,11 +229,12 @@ export default {
                             <th>状态</th>
                             <th>优先级</th>
                             <th>创建时间</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-if="loading"><td colspan="6" style="text-align:center;color:#909399;">加载中...</td></tr>
-                        <tr v-else-if="!filteredTasks.length"><td colspan="6" style="text-align:center;color:#909399;">暂无任务</td></tr>
+                        <tr v-if="loading"><td colspan="7" style="text-align:center;color:#909399;">加载中...</td></tr>
+                        <tr v-else-if="!filteredTasks.length"><td colspan="7" style="text-align:center;color:#909399;">暂无任务</td></tr>
                         <tr v-for="task in filteredTasks" :key="task.id">
                             <td>{{ task.id }}</td>
                             <td><router-link :to="'/ai-office/tasks/' + task.id" style="color:#409eff;">{{ task.title }}</router-link></td>
@@ -217,6 +242,10 @@ export default {
                             <td><span class="status-badge" :class="statusClass(task.status)">{{ statusLabel(task.status) }}</span></td>
                             <td>{{ task.priority }}</td>
                             <td>{{ task.created_at }}</td>
+                            <td style="white-space:nowrap;">
+                                <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:12px;margin-right:6px;" @click="reprocessTask(task)">重新处理</button>
+                                <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:12px;color:#f56c6c;" @click="deleteTask(task)">删除</button>
+                            </td>
                         </tr>
                     </tbody>
                 </table>

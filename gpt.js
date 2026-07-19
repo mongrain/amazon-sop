@@ -69,12 +69,10 @@ async function compareStorefrontImagesBySiderAi(imageUrlA, imageUrlB) {
     return result;
 }
 
-async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL } = {}) {
+async function chat(messages) {
     const payload = {
-        model,
-        messages: [
-            { role: 'user', content: `${userPrompt}\n\n${userContent}` }
-        ],
+        model: GPT_MODEL,
+        messages,
         stream: false
     };
 
@@ -84,7 +82,7 @@ async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL }
             'Content-Type': 'application/json'
         },
         maxBodyLength: Infinity,
-        timeout: Number(process.env.GPT_TIMEOUT_MS || 120000)
+        timeout: Number(process.env.GPT_TIMEOUT_MS || 500000)
     });
 
     const data = response.data;
@@ -98,39 +96,17 @@ async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL }
     if (!content) {
         throw new Error('GPT 返回内容为空');
     }
+    return content;
+}
+
+async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL } = {}) {
+    const content = await chat([{ role: 'user', content: `${userPrompt}\n\n${userContent}` }]);
     return parseGptJsonContent(content);
 }
 
 async function chatCompletionText(systemPrompt, userContent, { model = GPT_MODEL } = {}) {
-    const payload = {
-        model,
-        messages: [
-            { role: 'user', content: `${systemPrompt}\n\n${userContent}` }
-        ],
-        stream: false
-    };
-
-    const response = await axios.post(GPT_API_URL, payload, {
-        headers: {
-            Authorization: `Bearer ${GPT_API_KEY}`,
-            'Content-Type': 'application/json'
-        },
-        maxBodyLength: Infinity,
-        timeout: Number(process.env.GPT_TIMEOUT_MS || 120000)
-    });
-
-    const data = response.data;
-    if (data && data.code !== undefined && data.code !== 0) {
-        throw new Error(data.message || 'GPT 请求失败');
-    }
-
-    const content = data && data.choices && data.choices[0]
-        ? data.choices[0].message && data.choices[0].message.content
-        : null;
-    if (!content) {
-        throw new Error('GPT 返回内容为空');
-    }
+    const content = await chat([{ role: 'user', content: `${systemPrompt}\n\n${userContent}` }]);
     return String(content).trim();
 }
 
-module.exports = { compareStorefrontImages: compareStorefrontImagesBySiderAi, parseGptJsonContent, chatCompletionJson, chatCompletionText };
+module.exports = { compareStorefrontImages: compareStorefrontImagesBySiderAi, parseGptJsonContent, chatCompletionJson, chatCompletionText, chat };
