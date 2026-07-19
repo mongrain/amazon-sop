@@ -24,6 +24,7 @@
     "markdown-it-task-lists": "^2.1.1",
     "multer": "^2.1.1",
     "mysql2": "^3.9.0",
+    "openai": "^6.48.0",
     "sequelize": "^6.37.8",
     "viewerjs": "^1.11.7",
     "vue": "^3.5.13",
