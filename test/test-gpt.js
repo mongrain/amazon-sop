@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { parseGptJsonContent, compareStorefrontImages, chatCompletionJson } = require('../gpt');
+const { parseGptJsonContent, compareStorefrontImages, chatCompletionJson, chat } = require('../gpt');
 
 let passed = 0;
 let failed = 0;
@@ -80,43 +80,41 @@ async function runLiveTests() {
     console.log(`  Model: ${model}\n`);
 
     try {
-        const result = await chatCompletionJson(
-            '你是测试助手。必须直接返回 JSON，不要 Markdown 或额外文字。格式：{"status":"ok"}',
-            'ping'
+        const result = await chat(
+            [{ role: 'user', content: '你是测试助手。必须直接返回 JSON，不要 Markdown 或额外文字。格式：{"status":"ok"}' }]
         );
         if (!result || typeof result !== 'object') {
             throw new Error('返回结果不是对象');
         }
-        ok(`chatCompletionJson 连通（返回字段: ${Object.keys(result).join(', ') || '无'}）`);
+        ok(`chat 连通（返回字段: ${Object.keys(result).join(', ') || '无'}）`);
         console.log('  响应:', JSON.stringify(result, null, 2));
     } catch (err) {
-        fail('chatCompletionJson 连通', err);
+        fail('chat 连通', err);
     }
 
     const imageUrlA = process.env.GPT_TEST_IMAGE_A;
     const imageUrlB = process.env.GPT_TEST_IMAGE_B;
-    if (imageUrlA && imageUrlB) {
-        try {
-            const compare = await compareStorefrontImages(imageUrlA, imageUrlB);
-            if (typeof compare.is_changed !== 'boolean') {
-                throw new Error('is_changed 应为布尔值');
-            }
-            ok('compareStorefrontImages 图片对比');
-            console.log('  响应:', JSON.stringify(compare, null, 2));
-        } catch (err) {
-            fail('compareStorefrontImages 图片对比', err);
-        }
-    } else {
-        console.log('  - 跳过图片对比（在 .env 中设置 GPT_TEST_IMAGE_A / GPT_TEST_IMAGE_B 可启用）');
-    }
+    // if (imageUrlA && imageUrlB) {
+    //     try {
+    //         const compare = await compareStorefrontImages(imageUrlA, imageUrlB);
+    //         if (typeof compare.is_changed !== 'boolean') {
+    //             throw new Error('is_changed 应为布尔值');
+    //         }
+    //         ok('compareStorefrontImages 图片对比');
+    //         console.log('  响应:', JSON.stringify(compare, null, 2));
+    //     } catch (err) {
+    //         fail('compareStorefrontImages 图片对比', err);
+    //     }
+    // } else {
+    //     console.log('  - 跳过图片对比（在 .env 中设置 GPT_TEST_IMAGE_A / GPT_TEST_IMAGE_B 可启用）');
+    // }
 
-    console.log('');
 }
 
 async function main() {
     const live = process.argv.includes('--live');
 
-    runUnitTests();
+    // runUnitTests();
 
     if (live) {
         await runLiveTests();

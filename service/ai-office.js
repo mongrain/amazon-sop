@@ -90,9 +90,39 @@ async function getTaskById(taskId) {
     return enrichTask(row);
 }
 
+function buildSubtasksSummaryMarkdown(subs) {
+    return subs.map((s, i) => {
+        const who = [s.agent_emoji, s.agent_name || s.agent_code || '员工'].filter(Boolean).join(' ');
+        const body = s.output_markdown && String(s.output_markdown).trim()
+            ? String(s.output_markdown).trim()
+            : '（无产出）';
+        return `## ${i + 1}. ${who} — ${s.title}\n\n${body}`;
+    }).join('\n\n---\n\n');
+}
+
+async function finalizeParentTask(parentId, subs) {
+    const summary = buildSubtasksSummaryMarkdown(subs);
+    await updateTaskStatus(parentId, 'DONE', { output_markdown: summary });
+    await appendLog(parentId, { log_type: 'system', content: '所有子任务已完成，已汇总产出并关闭父任务' });
+    return getTaskById(parentId);
+}
+
 async function getTaskDetail(taskId) {
-    const task = await getTaskById(taskId);
+    let task = await getTaskById(taskId);
     if (!task) return null;
+
+    let subtasks = await listTasks({ parent_task_id: taskId, include_subtasks: true });
+
+    // 父任务：子任务已全部完成但未汇总时，补写产出并标记 DONE（兼容历史卡住数据）
+    if (
+        !task.parent_task_id &&
+        subtasks.length > 0 &&
+        subtasks.every(t => t.status === 'DONE') &&
+        (task.status !== 'DONE' || !task.output_markdown)
+    ) {
+        task = await finalizeParentTask(task.id, subtasks);
+        subtasks = await listTasks({ parent_task_id: taskId, include_subtasks: true });
+    }
 
     const logs = await queryAll(`
         SELECT l.*, a.name AS agent_name, a.avatar_emoji AS agent_emoji
@@ -101,8 +131,6 @@ async function getTaskDetail(taskId) {
         WHERE l.task_id = ?
         ORDER BY l.created_at ASC, l.id ASC
     `, [taskId]);
-
-    const subtasks = await listTasks({ parent_task_id: taskId, include_subtasks: true });
 
     return { task, agent: task.assigned_agent_id ? {
         id: task.assigned_agent_id,
@@ -215,11 +243,88 @@ async function refreshAgentStatuses() {
 
 async function checkParentCompletion(parentId) {
     if (!parentId) return;
+    const parent = await getTaskById(parentId);
+    if (!parent) return;
     const subs = await listTasks({ parent_task_id: parentId, include_subtasks: true });
     if (subs.length > 0 && subs.every(t => t.status === 'DONE')) {
-        await updateTaskStatus(parentId, 'DONE');
-        await appendLog(parentId, { log_type: 'system', content: '所有子任务已完成，父任务关闭' });
+        if (parent.status !== 'DONE' || !parent.output_markdown) {
+            await finalizeParentTask(parentId, subs);
+        }
     }
+}
+
+async function deleteTask(taskId) {
+    const task = await getTaskById(taskId);
+    if (!task) return false;
+    await runSql('DELETE FROM ai_office_tasks WHERE id = ?', [taskId]);
+    await refreshAgentStatuses();
+    return true;
+}
+
+async function resetTaskForReprocess(taskId) {
+    await runSql(`
+        UPDATE ai_office_tasks SET
+            status = 'QUEUED',
+            output_markdown = NULL,
+            review_comment = NULL,
+            error_message = NULL,
+            completed_at = NULL,
+            retry_count = 0,
+            updated_at = NOW()
+        WHERE id = ?
+    `, [taskId]);
+}
+
+/**
+ * 重新处理任务。
+ * - 叶子任务：重置自身并返回待派发 id
+ * - 有子任务的父任务：保留已 DONE 的子任务，仅重置并重派未完成子任务
+ * @returns {{ task: object, dispatchIds: number[] } | null}
+ */
+async function reprocessTask(taskId) {
+    const task = await getTaskById(taskId);
+    if (!task) return null;
+
+    const subs = await listTasks({ parent_task_id: taskId, include_subtasks: true });
+
+    if (subs.length > 0) {
+        const toRetry = subs.filter(s => s.status !== 'DONE');
+        if (!toRetry.length) {
+            await checkParentCompletion(taskId);
+            await appendLog(taskId, { log_type: 'system', content: '子任务均已完成，无需重新处理' });
+            await refreshAgentStatuses();
+            return { task: await getTaskById(taskId), dispatchIds: [] };
+        }
+
+        const dispatchIds = [];
+        for (const child of toRetry) {
+            await resetTaskForReprocess(child.id);
+            await appendLog(child.id, { log_type: 'system', content: '任务已重新处理' });
+            dispatchIds.push(child.id);
+        }
+
+        await runSql(`
+            UPDATE ai_office_tasks SET
+                status = 'IN_PROGRESS',
+                output_markdown = NULL,
+                review_comment = NULL,
+                error_message = NULL,
+                completed_at = NULL,
+                updated_at = NOW()
+            WHERE id = ?
+        `, [taskId]);
+        await appendLog(taskId, {
+            log_type: 'system',
+            content: `已重新处理 ${dispatchIds.length} 个未完成子任务，已完成子任务保留`
+        });
+        await refreshAgentStatuses();
+        return { task: await getTaskById(taskId), dispatchIds };
+    }
+
+    await resetTaskForReprocess(taskId);
+    await appendLog(taskId, { log_type: 'system', content: '任务已重新处理' });
+    await refreshAgentStatuses();
+    return { task: await getTaskById(taskId), dispatchIds: [taskId] };
 }
 
 module.exports = {
@@ -233,6 +338,8 @@ module.exports = {
     appendLog,
     refreshAgentStatuses,
     checkParentCompletion,
+    deleteTask,
+    reprocessTask,
     EXECUTABLE_CODES,
     MAX_RETRIES,
     parseJsonField

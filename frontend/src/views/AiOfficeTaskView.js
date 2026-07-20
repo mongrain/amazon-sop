@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { getApiError, getMarkdownIt, http } from '@/utils/index.js';
 import DOMPurify from 'dompurify';
 
@@ -18,10 +18,12 @@ export default {
     name: 'AiOfficeTaskView',
     setup() {
         const route = useRoute();
+        const router = useRouter();
         const taskId = ref(route.params.id ? String(route.params.id) : '');
         const detail = ref(null);
         const error = ref('');
         const loading = ref(true);
+        const acting = ref(false);
         let pollTimer = null;
 
         const task = computed(() => detail.value && detail.value.task);
@@ -74,6 +76,36 @@ export default {
             }
         }
 
+        async function reprocessTask() {
+            if (!task.value) return;
+            if (!confirm('确认重新处理任务「' + task.value.title + '」？已完成的子任务会保留，仅重跑未完成/失败的任务。')) return;
+            acting.value = true;
+            error.value = '';
+            try {
+                await http.post('/api/ai-office/tasks/' + taskId.value + '/reprocess');
+                await loadDetail();
+                startPolling();
+            } catch (e) {
+                error.value = getApiError(e, '重新处理失败');
+            } finally {
+                acting.value = false;
+            }
+        }
+
+        async function deleteTask() {
+            if (!task.value) return;
+            if (!confirm('确认删除任务「' + task.value.title + '」？子任务与日志将一并删除，不可恢复。')) return;
+            acting.value = true;
+            error.value = '';
+            try {
+                await http.delete('/api/ai-office/tasks/' + taskId.value);
+                router.push('/ai-office');
+            } catch (e) {
+                error.value = getApiError(e, '删除失败');
+                acting.value = false;
+            }
+        }
+
         onMounted(async () => {
             await loadDetail();
             startPolling();
@@ -86,9 +118,12 @@ export default {
             subtasks,
             error,
             loading,
+            acting,
             isActive,
             outputHtml,
-            statusLabel
+            statusLabel,
+            reprocessTask,
+            deleteTask
         };
     },
     template: `<router-link to="/ai-office" class="back-link">← 返回 AI 办公室</router-link>
@@ -99,6 +134,10 @@ export default {
                     ID：{{ task.id }} · {{ task.agent_emoji }} {{ task.agent_name || '未指派' }} ·
                     <span class="status-badge">{{ statusLabel(task.status) }}</span>
                     <span v-if="isActive" style="margin-left:8px;font-size:12px;color:#909399;">自动刷新中</span>
+                </div>
+                <div v-if="task" class="header-actions" style="margin-top:12px;">
+                    <button type="button" class="btn-secondary" :disabled="acting" @click="reprocessTask">重新处理</button>
+                    <button type="button" class="btn-secondary" style="color:#f56c6c;" :disabled="acting" @click="deleteTask">删除</button>
                 </div>
             </div>
 

@@ -1713,6 +1713,29 @@ function registerProtectedPageApi(app, ctx) {
             res.status(500).json({ error: e.message });
         }
     });
+
+    app.delete('/api/ai-office/tasks/:id', async (req, res) => {
+        try {
+            const ok = await aiOffice.deleteTask(Number(req.params.id));
+            if (!ok) return res.status(404).json({ error: '任务不存在' });
+            res.json({ ok: true });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/ai-office/tasks/:id/reprocess', async (req, res) => {
+        try {
+            const result = await aiOffice.reprocessTask(Number(req.params.id));
+            if (!result) return res.status(404).json({ error: '任务不存在' });
+            for (const id of result.dispatchIds) {
+                dispatchAiOfficeTask(id);
+            }
+            res.json({ task: result.task, dispatched: result.dispatchIds });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
 }
 
 module.exports = { registerPublicPageApi, registerProtectedPageApi };
