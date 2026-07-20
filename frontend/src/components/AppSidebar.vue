@@ -23,8 +23,7 @@ defineEmits(['logout']);
             <router-link to="/users" :class="{ active: active === 'users' }">人员管理</router-link>
             <router-link to="/competitors" :class="{ active: active === 'competitors' }">竞品库</router-link>
             <router-link to="/product-selection" :class="{ active: active === 'product_selection' }">选品分析</router-link>
-            <router-link to="/google-trends" :class="{ active: active === 'google_trends' }">Google Trends</router-link>
-            <router-link to="/asin-crawler" :class="{ active: active === 'asin_crawler' }">ASIN 爬虫</router-link>
+            <router-link to="/data-collection" :class="{ active: active === 'data_collection' }">数据采集</router-link>
             <router-link to="/amc-ads" :class="{ active: active === 'amc_ads' }">AMC 广告</router-link>
             <router-link to="/product-elimination" :class="{ active: active === 'product_elimination' }">产品淘汰分析</router-link>
             <router-link to="/knowledge" :class="{ active: active === 'knowledge' }">焚诀库</router-link>
