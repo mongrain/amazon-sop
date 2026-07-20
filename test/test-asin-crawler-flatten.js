@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { flattenForCsv } = require('../service/asin-crawler/flatten');
+const { flattenForCsv } = require('../service/data-collection/asin/flatten');
 
 const sample = {
     search_metadata: { status: 'Success', total_time_taken: 4.3 },

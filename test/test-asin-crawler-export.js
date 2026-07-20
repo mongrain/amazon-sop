@@ -1,6 +1,6 @@
 const assert = require('assert');
-const { buildExportFilename, buildWorkbook } = require('../service/asin-crawler/export');
-const { translateColumnHeader } = require('../service/asin-crawler/column-labels');
+const { buildExportFilename, buildWorkbook } = require('../service/data-collection/asin/export');
+const { translateColumnHeader } = require('../service/data-collection/asin/column-labels');
 
 assert.strictEqual(translateColumnHeader('product.title'), '标题');
 assert.strictEqual(buildExportFilename(['B0TEST1234'], 'json'), 'B0TEST1234.json');

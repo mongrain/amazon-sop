@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { getGoogleTrendsBatch } = require('../service/google-trends');
+const { getGoogleTrendsBatch } = require('../service/data-collection/trends');
 
 async function main() {
     const keywords = process.argv.slice(2);
