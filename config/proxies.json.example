@@ -1,0 +1,7 @@
+{
+  "proxies": [
+    "http://127.0.0.1:7890",
+    "http://user:pass@proxy.example.com:8080"
+  ],
+  "cooldown_ms": 300000
+}
