@@ -29,7 +29,7 @@ const {
 const {
     initAsinCrawlerRunner,
     resumeStuckJobs
-} = require('./service/asin-crawler/job-runner');
+} = require('./service/data-collection/asin/job-runner');
 const { resolveOperatingStartedAtFromManualDays } = require('./service/operating-days');
 const { siteToStation } = require('./service/get-sell-time');
 const sopData = require('./sop-data');

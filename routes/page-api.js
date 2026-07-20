@@ -1447,18 +1447,6 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    const { getGoogleTrendsBatch } = require('../service/google-trends');
-
-    app.post('/api/google-trends', async (req, res) => {
-        try {
-            const { keywords, interval, geo, force_refresh: forceRefresh } = req.body || {};
-            const data = await getGoogleTrendsBatch(keywords, { interval, geo, forceRefresh: Boolean(forceRefresh) });
-            res.json(data);
-        } catch (e) {
-            res.status(400).json({ error: e.message });
-        }
-    });
-
     const amcAds = require('../service/amc-ads');
 
     app.get('/api/amc/schemas', async (req, res) => {
@@ -1737,11 +1725,13 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    const asinCrawler = require('../service/asin-crawler');
-    const { exportJobToXlsx, exportJobToJson } = require('../service/asin-crawler/export');
-    const tokenPool = require('../service/asin-crawler/token-pool');
+    const dataCollection = require('../service/data-collection');
+    const { exportJobToXlsx, exportJobToJson } = require('../service/data-collection/asin/export');
+    const tokenPool = dataCollection.tokenPool;
+    const asinCrawler = dataCollection.asin;
+    const { getGoogleTrendsBatch } = dataCollection.trends;
 
-    app.get('/api/asin-crawler/tokens', async (req, res) => {
+    app.get('/api/data-collection/tokens', async (req, res) => {
         try {
             const tokens = await tokenPool.listTokens();
             const active_count = await tokenPool.countActiveTokens();
@@ -1751,7 +1741,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.post('/api/asin-crawler/tokens', async (req, res) => {
+    app.post('/api/data-collection/tokens', async (req, res) => {
         try {
             const body = req.body || {};
             const tokensText = body.tokens != null ? body.tokens : body.token;
@@ -1769,7 +1759,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.post('/api/asin-crawler/tokens/:id/disable', async (req, res) => {
+    app.post('/api/data-collection/tokens/:id/disable', async (req, res) => {
         try {
             const ok = await tokenPool.disableToken(req.params.id);
             if (!ok) return res.status(404).json({ error: 'Token 不存在' });
@@ -1779,7 +1769,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.post('/api/asin-crawler/tokens/:id/reset', async (req, res) => {
+    app.post('/api/data-collection/tokens/:id/reset', async (req, res) => {
         try {
             const ok = await tokenPool.resetToken(req.params.id);
             if (!ok) return res.status(404).json({ error: 'Token 不存在' });
@@ -1789,7 +1779,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.post('/api/asin-crawler/jobs', async (req, res) => {
+    app.post('/api/data-collection/asin/jobs', async (req, res) => {
         try {
             const { job, warnings } = await asinCrawler.createJob({
                 asinsText: req.body.asins,
@@ -1802,7 +1792,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.get('/api/asin-crawler/jobs', async (req, res) => {
+    app.get('/api/data-collection/asin/jobs', async (req, res) => {
         try {
             const limit = Math.min(Number(req.query.limit || 20), 100);
             const offset = Number(req.query.offset || 0);
@@ -1813,7 +1803,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.get('/api/asin-crawler/jobs/:id', async (req, res) => {
+    app.get('/api/data-collection/asin/jobs/:id', async (req, res) => {
         try {
             const job = await asinCrawler.getJob(req.params.id);
             if (!job) return res.status(404).json({ error: '任务不存在' });
@@ -1823,7 +1813,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.get('/api/asin-crawler/jobs/:id/items', async (req, res) => {
+    app.get('/api/data-collection/asin/jobs/:id/items', async (req, res) => {
         try {
             const items = await asinCrawler.listJobItems(req.params.id);
             res.json({ items });
@@ -1832,7 +1822,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.get('/api/asin-crawler/items/:id/json', async (req, res) => {
+    app.get('/api/data-collection/asin/items/:id/json', async (req, res) => {
         try {
             const item = await asinCrawler.getJobItemJson(req.params.id);
             if (!item) return res.status(404).json({ error: '记录不存在' });
@@ -1842,7 +1832,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.get('/api/asin-crawler/jobs/:id/export.xlsx', async (req, res) => {
+    app.get('/api/data-collection/asin/jobs/:id/export.xlsx', async (req, res) => {
         try {
             const job = await asinCrawler.getJob(req.params.id);
             if (!job) return res.status(404).json({ error: '任务不存在' });
@@ -1855,7 +1845,7 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.get('/api/asin-crawler/jobs/:id/export.json', async (req, res) => {
+    app.get('/api/data-collection/asin/jobs/:id/export.json', async (req, res) => {
         try {
             const job = await asinCrawler.getJob(req.params.id);
             if (!job) return res.status(404).json({ error: '任务不存在' });
@@ -1868,11 +1858,21 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
-    app.post('/api/asin-crawler/jobs/:id/cancel', async (req, res) => {
+    app.post('/api/data-collection/asin/jobs/:id/cancel', async (req, res) => {
         try {
             const job = await asinCrawler.cancelJob(req.params.id);
             if (!job) return res.status(404).json({ error: '任务不存在' });
             res.json({ job });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/data-collection/trends', async (req, res) => {
+        try {
+            const { keywords, interval, geo, force_refresh: forceRefresh } = req.body || {};
+            const data = await getGoogleTrendsBatch(keywords, { interval, geo, forceRefresh: Boolean(forceRefresh) });
+            res.json(data);
         } catch (e) {
             res.status(400).json({ error: e.message });
         }
