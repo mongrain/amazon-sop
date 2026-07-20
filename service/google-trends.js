@@ -1,184 +1,21 @@
 require('dotenv').config();
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const { defaultPool: proxyPool } = require('./proxy-pool');
+const tokenPool = require('./asin-crawler/token-pool');
+const { fetchSearchApi, isTokenExhaustedError, isRetryableError } = require('./asin-crawler/searchapi');
 
-const GOOGLE_TRENDS_BASE = 'https://trends.google.com/trends/api';
 const CACHE_ROOT = path.join(__dirname, '../data/google-trends/cache');
 const CACHE_TTL_MS = Number(process.env.GOOGLE_TRENDS_CACHE_TTL_MS || 24 * 60 * 60 * 1000);
-const REQUEST_INTERVAL_MS = Number(process.env.GOOGLE_TRENDS_REQUEST_INTERVAL_MS || 3000);
-const REQUEST_TIMEOUT_MS = Number(process.env.GOOGLE_TRENDS_TIMEOUT_MS || 60000);
+const REQUEST_INTERVAL_MS = Number(
+    process.env.GOOGLE_TRENDS_REQUEST_INTERVAL_MS ||
+    process.env.SEARCHAPI_REQUEST_INTERVAL_MS ||
+    3000
+);
 const DEFAULT_GEO = String(process.env.GOOGLE_TRENDS_GEO || 'US').trim().toUpperCase();
 const DEFAULT_HL = String(process.env.GOOGLE_TRENDS_HL || 'en-US').trim();
 const DEFAULT_TZ = Number(process.env.GOOGLE_TRENDS_TZ || 360);
-const SESSION_COOKIE_PATH = path.join(CACHE_ROOT, 'session-cookie.json');
-const sessionCookies = new Map();
-
-function proxySessionKey(proxyUrl) {
-    return proxyUrl || 'direct';
-}
-
-function mergeCookiePairs(...parts) {
-    const map = new Map();
-    for (const part of parts) {
-        String(part || '')
-            .split(';')
-            .map(item => item.trim())
-            .filter(Boolean)
-            .forEach(item => {
-                const eq = item.indexOf('=');
-                if (eq > 0) map.set(item.slice(0, eq), item.slice(eq + 1));
-            });
-    }
-    return [...map.entries()].map(([key, value]) => `${key}=${value}`).join('; ');
-}
-
-function readSessionCookieStore() {
-    if (!fs.existsSync(SESSION_COOKIE_PATH)) return { by_proxy: {} };
-    try {
-        const parsed = JSON.parse(fs.readFileSync(SESSION_COOKIE_PATH, 'utf8'));
-        if (parsed && typeof parsed.by_proxy === 'object') return parsed;
-        if (parsed && parsed.cookie) {
-            return {
-                by_proxy: {
-                    direct: {
-                        cookie: String(parsed.cookie || '').trim(),
-                        saved_at: parsed.saved_at || null
-                    }
-                }
-            };
-        }
-    } catch (e) {}
-    return { by_proxy: {} };
-}
-
-function writeSessionCookieStore(store) {
-    fs.mkdirSync(CACHE_ROOT, { recursive: true });
-    fs.writeFileSync(SESSION_COOKIE_PATH, JSON.stringify(store, null, 2), 'utf8');
-}
-
-function loadSessionCookie(proxyUrl) {
-    const envCookie = String(process.env.GOOGLE_TRENDS_COOKIE || '').trim();
-    if (envCookie) return envCookie;
-
-    const key = proxySessionKey(proxyUrl);
-    if (sessionCookies.has(key)) return sessionCookies.get(key);
-
-    const store = readSessionCookieStore();
-    const saved = store.by_proxy[key];
-    const cookie = String(saved && saved.cookie || '').trim();
-    if (cookie) sessionCookies.set(key, cookie);
-    return cookie;
-}
-
-function saveSessionCookie(cookie, proxyUrl) {
-    const normalized = String(cookie || '').trim();
-    if (!normalized) return;
-
-    const key = proxySessionKey(proxyUrl);
-    sessionCookies.set(key, normalized);
-
-    const store = readSessionCookieStore();
-    store.by_proxy[key] = {
-        cookie: normalized,
-        saved_at: new Date().toISOString()
-    };
-    writeSessionCookieStore(store);
-}
-
-function captureSessionCookieFromResponse(response, proxyUrl) {
-    const setCookie = response && response.headers && response.headers['set-cookie'];
-    const pairs = Array.isArray(setCookie)
-        ? setCookie.map(item => String(item).split(';')[0].trim()).filter(Boolean)
-        : (setCookie ? [String(setCookie).split(';')[0].trim()] : []);
-    if (!pairs.length) return false;
-
-    saveSessionCookie(mergeCookiePairs(loadSessionCookie(proxyUrl), pairs.join('; ')), proxyUrl);
-    return true;
-}
-
-function buildHeaders(proxyUrl) {
-    const headers = {
-        Accept: 'application/json, text/plain, */*',
-        Referer: 'https://trends.google.com/trends/explore',
-        'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-    };
-    const cookie = loadSessionCookie(proxyUrl);
-    if (cookie) headers.Cookie = cookie;
-    return headers;
-}
-
-async function requestGoogleTrendsOnce(url, { params, label = 'Google Trends', proxyUrl = null } = {}) {
-    proxyPool.activateProxy(proxyUrl);
-    const options = {
-        params,
-        headers: buildHeaders(proxyUrl),
-        timeout: REQUEST_TIMEOUT_MS,
-        validateStatus: () => true,
-        proxy: false
-    };
-
-    try {
-        let response = await axios.get(url, options);
-        if (response.status === 429 && captureSessionCookieFromResponse(response, proxyUrl)) {
-            options.headers = buildHeaders(proxyUrl);
-            response = await axios.get(url, options);
-        }
-
-        if (response.status === 429) {
-            const error = new Error(`${label} 请求过于频繁或当前网络被限制，请稍后重试，或配置 GOOGLE_TRENDS_COOKIE 后再试`);
-            error.response = response;
-            throw error;
-        }
-        if (response.status === 403) {
-            const error = new Error(`${label} 拒绝了当前请求，请配置 GOOGLE_TRENDS_COOKIE 或更换可访问 Google 的网络`);
-            error.response = response;
-            throw error;
-        }
-        if (response.status >= 400) {
-            const detail = typeof response.data === 'string'
-                ? response.data.slice(0, 120).replace(/\s+/g, ' ')
-                : '';
-            const error = new Error(`${label} 返回 HTTP ${response.status}${detail ? `：${detail}` : ''}`);
-            error.response = response;
-            throw error;
-        }
-
-        return response;
-    } finally {
-        proxyPool.clearActiveProxy();
-    }
-}
-
-async function requestGoogleTrends(url, { params, label = 'Google Trends' } = {}) {
-    proxyPool.reload();
-    const candidates = proxyPool.getAvailableProxies();
-    const proxyUrls = candidates.length ? candidates : [null];
-    let lastError = null;
-
-    for (let index = 0; index < proxyUrls.length; index++) {
-        const proxyUrl = proxyUrls[index];
-        try {
-            return await requestGoogleTrendsOnce(url, { params, label, proxyUrl });
-        } catch (error) {
-            lastError = error;
-            const canRotate = proxyPool.shouldRotateOnError(error) && index < proxyUrls.length - 1;
-            if (!canRotate) break;
-
-            proxyPool.markFailure(proxyUrl, error.response || error);
-            console.warn(
-                `[google-trends] ${label} 代理 ${proxyPool.maskProxyUrl(proxyUrl)} 不可用，切换下一个代理重试`
-            );
-        }
-    }
-
-    if (lastError && proxyPool.size() > 1) {
-        lastError.message = `${lastError.message}（已尝试 ${proxyPool.size()} 个代理）`;
-    }
-    throw lastError || new Error(`${label} 请求失败`);
-}
+/** SearchAPI TIMESERIES 单次最多 5 个关键词 */
+const BATCH_SIZE = Math.min(5, Math.max(1, Number(process.env.GOOGLE_TRENDS_BATCH_SIZE || 5)));
 
 const INTERVAL_TIME_MAP = {
     h: 'now 1-H',
@@ -190,20 +27,6 @@ const INTERVAL_TIME_MAP = {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function stripGoogleJsonPrefix(payload) {
-    const text = typeof payload === 'string' ? payload : JSON.stringify(payload || '');
-    return text.replace(/^\)\]\}',?\n?/, '');
-}
-
-function parseGoogleJson(payload) {
-    const text = stripGoogleJsonPrefix(payload);
-    try {
-        return JSON.parse(text);
-    } catch (error) {
-        throw new Error('Google Trends 返回内容无法解析');
-    }
 }
 
 function normalizeKeyword(keyword) {
@@ -252,131 +75,126 @@ function formatRequestError(error) {
     if (!error) return '未知错误';
     if (error.response) {
         const status = error.response.status;
-        if (status === 429) return 'Google Trends 请求过于频繁或当前网络被限制，请稍后重试，或配置 GOOGLE_TRENDS_COOKIE 后再试';
-        if (status === 403) return 'Google Trends 拒绝了当前请求，请配置 GOOGLE_TRENDS_COOKIE 或更换可访问 Google 的网络';
-        const detail = typeof error.response.data === 'string'
-            ? error.response.data.slice(0, 120).replace(/\s+/g, ' ')
-            : '';
-        return `Google Trends 返回 HTTP ${status}${detail ? `：${detail}` : ''}`;
+        const body = error.response.data;
+        const detail = typeof body === 'string'
+            ? body.slice(0, 120).replace(/\s+/g, ' ')
+            : (body?.error || body?.message || '');
+        if (status === 401 || status === 403) {
+            return 'SearchAPI token 无效或额度已用尽，请在 ASIN 爬虫页面添加或重置 token';
+        }
+        return `SearchAPI 返回 HTTP ${status}${detail ? `：${detail}` : ''}`;
     }
     if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
-        return '连接 Google Trends 超时，请确认服务器网络可以访问 trends.google.com';
+        return 'SearchAPI 请求超时';
     }
-    if (error.code) return `${error.code}${error.message ? `：${error.message}` : ''}`;
     return error.message || '未知错误';
 }
 
-function findTimeseriesWidget(widgets) {
-    return (widgets || []).find(widget => {
-        const id = String(widget.id || '').toUpperCase();
-        const type = String(widget.type || '').toUpperCase();
-        return id === 'TIMESERIES' || type === 'TIMESERIES'
-            || id.includes('TIMESERIES') || type.includes('TIMESERIES');
+function chunkArray(list, size) {
+    const chunks = [];
+    for (let i = 0; i < list.length; i += size) {
+        chunks.push(list.slice(i, i + size));
+    }
+    return chunks;
+}
+
+function mapSearchApiTimeline(timeline, keyword) {
+    const normalizedKeyword = normalizeKeyword(keyword).toLowerCase();
+    return timeline.map(row => {
+        const values = Array.isArray(row.values) ? row.values : [];
+        let entry = values.find(item => String(item.query || '').trim().toLowerCase() === normalizedKeyword);
+        if (!entry && values.length === 1) entry = values[0];
+        const value = Number(entry?.extracted_value ?? entry?.value ?? 0);
+        const timestamp = Number(row.timestamp);
+        const date = Number.isFinite(timestamp)
+            ? new Date(timestamp * 1000).toISOString().slice(0, 10)
+            : '';
+        return {
+            date,
+            time: row.timestamp,
+            formattedTime: row.date || date,
+            searches: Number.isFinite(value) ? value : 0,
+            value: Number.isFinite(value) ? value : 0,
+            formattedValue: entry?.value != null ? String(entry.value) : String(Number.isFinite(value) ? value : 0),
+            empty: false
+        };
     });
 }
 
-function normalizePoint(row) {
-    const rawValue = Array.isArray(row.value) ? row.value[0] : row.value;
-    const value = Number(rawValue);
-    const formattedValue = Array.isArray(row.formattedValue) ? row.formattedValue[0] : row.formattedValue;
-    const timestamp = Number(row.time);
-    const date = Number.isFinite(timestamp)
-        ? new Date(timestamp * 1000).toISOString().slice(0, 10)
-        : (row.formattedTime || '');
-
-    return {
-        date,
-        time: row.time,
-        formattedTime: row.formattedTime || date,
-        searches: Number.isFinite(value) ? value : 0,
-        value: Number.isFinite(value) ? value : 0,
-        formattedValue: formattedValue || String(Number.isFinite(value) ? value : 0),
-        empty: Array.isArray(row.isPartial) ? Boolean(row.isPartial[0]) : Boolean(row.isPartial)
-    };
-}
-
-async function fetchExplore(keyword, interval, geo, proxyUrl = null) {
-    const req = {
-        comparisonItem: [{
-            keyword,
-            geo,
-            time: resolveGoogleTime(interval)
-        }],
-        category: 0,
-        property: ''
-    };
-
-    const response = await requestGoogleTrendsOnce(`${GOOGLE_TRENDS_BASE}/explore`, {
-        params: {
-            hl: DEFAULT_HL,
-            tz: DEFAULT_TZ,
-            req: JSON.stringify(req)
-        },
-        label: 'Google Trends explore',
-        proxyUrl
-    });
-
-    return parseGoogleJson(response.data);
-}
-
-async function fetchTimeline(widget, proxyUrl = null) {
-    if (!widget || !widget.token || !widget.request) {
-        throw new Error('Google Trends 未返回趋势时间序列组件');
+/**
+ * 批量拉取关键词趋势（SearchAPI 单次最多 5 个，用逗号拼接）
+ * @returns {Promise<Map<string, object>>} keyword -> { code, message, success, data }
+ */
+async function fetchTrendsBatchFromSearchApi(keywords, interval, geo) {
+    const list = keywords.map(normalizeKeyword).filter(Boolean);
+    if (!list.length) {
+        throw new Error('关键词不能为空');
+    }
+    if (list.length > BATCH_SIZE) {
+        throw new Error(`单次 SearchAPI 请求最多 ${BATCH_SIZE} 个关键词`);
     }
 
-    const response = await requestGoogleTrendsOnce(`${GOOGLE_TRENDS_BASE}/widgetdata/multiline`, {
-        params: {
-            hl: DEFAULT_HL,
-            tz: DEFAULT_TZ,
-            req: JSON.stringify(widget.request),
-            token: widget.token
-        },
-        label: 'Google Trends timeline',
-        proxyUrl
-    });
+    const activeCount = await tokenPool.countActiveTokens();
+    if (activeCount <= 0) {
+        throw new Error('无可用 SearchAPI token，请先在 ASIN 爬虫页面添加 token');
+    }
 
-    const body = parseGoogleJson(response.data);
-    const rows = body && body.default && Array.isArray(body.default.timelineData)
-        ? body.default.timelineData
-        : [];
+    const triedTokenIds = new Set();
+    let lastError = '';
 
-    return rows.map(normalizePoint);
-}
+    while (true) {
+        const token = await tokenPool.acquireToken();
+        if (!token) {
+            throw new Error(lastError || '无可用 SearchAPI token，请先在 ASIN 爬虫页面添加 token');
+        }
+        if (triedTokenIds.has(token.id)) {
+            throw new Error(lastError || '全部 SearchAPI token 已失效，请添加或重置 token');
+        }
+        triedTokenIds.add(token.id);
 
-async function fetchTrendsFromGoogle(keyword, interval, geo) {
-    proxyPool.reload();
-    const candidates = proxyPool.getAvailableProxies();
-    const proxyUrls = candidates.length ? candidates : [null];
-    let lastError = null;
-
-    for (let index = 0; index < proxyUrls.length; index++) {
-        const proxyUrl = proxyUrls[index];
         try {
-            const explore = await fetchExplore(keyword, interval, geo, proxyUrl);
-            const widget = findTimeseriesWidget(explore.widgets);
-            const data = await fetchTimeline(widget, proxyUrl);
-            return {
-                code: 'OK',
-                message: 'Google Trends relative interest, scaled 0-100',
-                success: true,
-                data
+            await tokenPool.touchTokenUsed(token.id);
+            const params = {
+                engine: 'google_trends',
+                q: list.join(','),
+                data_type: 'TIMESERIES',
+                geo,
+                time: resolveGoogleTime(interval),
+                hl: DEFAULT_HL,
+                tz: DEFAULT_TZ
             };
-        } catch (error) {
-            lastError = error;
-            const canRotate = proxyPool.shouldRotateOnError(error) && index < proxyUrls.length - 1;
-            if (!canRotate) break;
+            const data = await fetchSearchApi({ params, apiKey: token.token });
+            const timeline = data.interest_over_time && Array.isArray(data.interest_over_time.timeline_data)
+                ? data.interest_over_time.timeline_data
+                : [];
+            if (!timeline.length) {
+                throw new Error('SearchAPI 未返回 interest_over_time 数据');
+            }
 
-            proxyPool.markFailure(proxyUrl, error.response || error);
-            console.warn(
-                `[google-trends] 关键词 ${keyword} 代理 ${proxyPool.maskProxyUrl(proxyUrl)} 不可用，切换下一个代理重试`
-            );
+            const resultMap = new Map();
+            for (const keyword of list) {
+                resultMap.set(keyword, {
+                    code: 'OK',
+                    message: 'Google Trends relative interest via SearchAPI, scaled 0-100',
+                    success: true,
+                    data: mapSearchApiTimeline(timeline, keyword)
+                });
+            }
+            return resultMap;
+        } catch (error) {
+            lastError = formatRequestError(error);
+            if (isTokenExhaustedError(error)) {
+                await tokenPool.markTokenExhausted(token.id, lastError);
+                continue;
+            }
+            if (isRetryableError(error)) {
+                await tokenPool.recordTokenFailure(token.id, lastError);
+                await sleep(3000);
+                continue;
+            }
+            throw new Error(lastError);
         }
     }
-
-    if (lastError && proxyPool.size() > 1) {
-        lastError.message = `${lastError.message}（已尝试 ${proxyPool.size()} 个代理）`;
-    }
-    throw lastError || new Error('Google Trends 请求失败');
 }
 
 class RateLimiter {
@@ -400,73 +218,40 @@ class RateLimiter {
 
 const rateLimiter = new RateLimiter(REQUEST_INTERVAL_MS);
 
-async function getGoogleTrends(keyword, interval = 'w', { forceRefresh = false, geo = DEFAULT_GEO } = {}) {
-    const normalizedKeyword = normalizeKeyword(keyword);
-    const normalizedInterval = normalizeInterval(interval);
-    const normalizedGeo = String(geo || DEFAULT_GEO).trim().toUpperCase();
-
-    if (!normalizedKeyword) {
-        throw new Error('关键词不能为空');
-    }
-
-    if (!forceRefresh) {
-        const cached = readCache(normalizedKeyword, normalizedInterval, normalizedGeo);
-        if (cached) {
-            return {
-                keyword: normalizedKeyword,
-                interval: normalizedInterval,
-                geo: normalizedGeo,
-                code: cached.code,
-                message: cached.message,
-                success: cached.success,
-                data: cached.data,
-                source: 'cache',
-                cached_at: cached.cached_at
-            };
-        }
-    }
-
-    let apiResult;
-    try {
-        apiResult = await rateLimiter.schedule(
-            () => fetchTrendsFromGoogle(normalizedKeyword, normalizedInterval, normalizedGeo)
-        );
-    } catch (error) {
-        const message = formatRequestError(error);
-        const stale = readCache(normalizedKeyword, normalizedInterval, normalizedGeo, { allowStale: true });
-        if (stale && !forceRefresh) {
-            return {
-                keyword: normalizedKeyword,
-                interval: normalizedInterval,
-                geo: normalizedGeo,
-                code: stale.code,
-                message: `Google Trends 实时请求失败，已返回过期缓存：${message}`,
-                success: stale.success,
-                data: stale.data,
-                source: 'stale_cache',
-                cached_at: stale.cached_at,
-                warning: message
-            };
-        }
-        throw new Error(`Google Trends 请求失败：${message}`);
-    }
-    const cachedAt = new Date().toISOString();
-    const payload = {
-        keyword: normalizedKeyword,
-        interval: normalizedInterval,
-        geo: normalizedGeo,
-        code: apiResult.code,
-        message: apiResult.message,
-        success: apiResult.success,
-        data: apiResult.data,
-        cached_at: cachedAt
-    };
-    writeCache(normalizedKeyword, normalizedInterval, normalizedGeo, payload);
-
+function buildCachedResult(keyword, interval, geo, cached, source) {
     return {
-        ...payload,
-        source: 'google_trends'
+        keyword,
+        interval,
+        geo,
+        code: cached.code,
+        message: cached.message,
+        success: cached.success,
+        data: cached.data,
+        source,
+        cached_at: cached.cached_at
     };
+}
+
+function buildErrorResult(keyword, interval, geo, message) {
+    return {
+        keyword,
+        interval,
+        geo,
+        code: 'ERROR',
+        message,
+        success: false,
+        data: [],
+        source: 'error',
+        error: message
+    };
+}
+
+async function getGoogleTrends(keyword, interval = 'w', { forceRefresh = false, geo = DEFAULT_GEO } = {}) {
+    const batch = await getGoogleTrendsBatch([keyword], { interval, forceRefresh, geo });
+    const result = batch.results[0];
+    if (!result) throw new Error('关键词不能为空');
+    if (!result.success) throw new Error(result.error || result.message || 'Google Trends 请求失败');
+    return result;
 }
 
 function parseKeywords(input) {
@@ -493,26 +278,68 @@ async function getGoogleTrendsBatch(keywords, options = {}) {
     const interval = normalizeInterval(options.interval);
     const forceRefresh = Boolean(options.forceRefresh);
     const geo = String(options.geo || DEFAULT_GEO).trim().toUpperCase();
-    const results = [];
+
+    const resultByKeyword = new Map();
+    const needFetch = [];
 
     for (const keyword of list) {
+        if (!forceRefresh) {
+            const cached = readCache(keyword, interval, geo);
+            if (cached) {
+                resultByKeyword.set(keyword, buildCachedResult(keyword, interval, geo, cached, 'cache'));
+                continue;
+            }
+        }
+        needFetch.push(keyword);
+    }
+
+    const chunks = chunkArray(needFetch, BATCH_SIZE);
+    for (const chunk of chunks) {
         try {
-            const result = await getGoogleTrends(keyword, interval, { forceRefresh, geo });
-            results.push(result);
-        } catch (e) {
-            results.push({
-                keyword,
-                interval,
-                geo,
-                code: 'ERROR',
-                message: e.message,
-                success: false,
-                data: [],
-                source: 'error',
-                error: e.message
-            });
+            const apiMap = await rateLimiter.schedule(
+                () => fetchTrendsBatchFromSearchApi(chunk, interval, geo)
+            );
+            const cachedAt = new Date().toISOString();
+            for (const keyword of chunk) {
+                const apiResult = apiMap.get(keyword);
+                if (!apiResult) {
+                    resultByKeyword.set(
+                        keyword,
+                        buildErrorResult(keyword, interval, geo, 'SearchAPI 未返回该关键词数据')
+                    );
+                    continue;
+                }
+                const payload = {
+                    keyword,
+                    interval,
+                    geo,
+                    code: apiResult.code,
+                    message: apiResult.message,
+                    success: apiResult.success,
+                    data: apiResult.data,
+                    cached_at: cachedAt
+                };
+                writeCache(keyword, interval, geo, payload);
+                resultByKeyword.set(keyword, { ...payload, source: 'searchapi' });
+            }
+        } catch (error) {
+            const message = error.message || formatRequestError(error);
+            for (const keyword of chunk) {
+                const stale = readCache(keyword, interval, geo, { allowStale: true });
+                if (stale && !forceRefresh) {
+                    resultByKeyword.set(keyword, {
+                        ...buildCachedResult(keyword, interval, geo, stale, 'stale_cache'),
+                        message: `SearchAPI 请求失败，已返回过期缓存：${message}`,
+                        warning: message
+                    });
+                } else {
+                    resultByKeyword.set(keyword, buildErrorResult(keyword, interval, geo, message));
+                }
+            }
         }
     }
+
+    const results = list.map(keyword => resultByKeyword.get(keyword)).filter(Boolean);
 
     return {
         interval,
@@ -526,5 +353,6 @@ async function getGoogleTrendsBatch(keywords, options = {}) {
 module.exports = {
     getGoogleTrends,
     getGoogleTrendsBatch,
-    parseKeywords
+    parseKeywords,
+    BATCH_SIZE
 };

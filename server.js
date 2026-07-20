@@ -26,6 +26,10 @@ const {
     enqueueOperatingDaysForAllActiveProducts,
     startOperatingDaysWorker
 } = require('./service/operating-days-queue');
+const {
+    initAsinCrawlerRunner,
+    resumeStuckJobs
+} = require('./service/asin-crawler/job-runner');
 const { resolveOperatingStartedAtFromManualDays } = require('./service/operating-days');
 const { siteToStation } = require('./service/get-sell-time');
 const sopData = require('./sop-data');
@@ -184,6 +188,8 @@ initDb()
         dbReady = true;
         initOperatingDaysQueue({ queryOne, queryAll, runSql });
         startOperatingDaysWorker();
+        initAsinCrawlerRunner({ queryOne, queryAll, runSql });
+        resumeStuckJobs().catch(err => console.error('[asin-crawler] resume failed', err));
         console.log('Database initialized');
     })
     .catch(err => {

@@ -695,6 +695,83 @@ async function initDb() {
     }
 
     try {
+        await p.query(`CREATE TABLE IF NOT EXISTS searchapi_tokens (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            token VARCHAR(255) NOT NULL,
+            label VARCHAR(100) DEFAULT NULL,
+            status ENUM('active','exhausted','disabled') NOT NULL DEFAULT 'active',
+            last_used_at DATETIME DEFAULT NULL,
+            fail_count INT NOT NULL DEFAULT 0,
+            last_error VARCHAR(500) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_status (status),
+            INDEX idx_last_used (last_used_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS asin_crawl_jobs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            status ENUM('pending','running','completed','failed','cancelled') NOT NULL DEFAULT 'pending',
+            amazon_domain VARCHAR(50) NOT NULL DEFAULT 'amazon.com',
+            total_count INT NOT NULL DEFAULT 0,
+            success_count INT NOT NULL DEFAULT 0,
+            fail_count INT NOT NULL DEFAULT 0,
+            created_by INT DEFAULT NULL,
+            error_message VARCHAR(1000) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME DEFAULT NULL,
+            finished_at DATETIME DEFAULT NULL,
+            INDEX idx_status (status),
+            INDEX idx_created (created_at),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS asin_crawl_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            job_id INT NOT NULL,
+            asin VARCHAR(10) NOT NULL,
+            status ENUM('pending','processing','success','failed') NOT NULL DEFAULT 'pending',
+            raw_json JSON DEFAULT NULL,
+            flat_json JSON DEFAULT NULL,
+            error_message VARCHAR(500) DEFAULT NULL,
+            token_id INT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            finished_at DATETIME DEFAULT NULL,
+            INDEX idx_job (job_id),
+            INDEX idx_job_status (job_id, status),
+            INDEX idx_asin (asin),
+            FOREIGN KEY (job_id) REFERENCES asin_crawl_jobs(id) ON DELETE CASCADE,
+            FOREIGN KEY (token_id) REFERENCES searchapi_tokens(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(`CREATE TABLE IF NOT EXISTS asin_crawl_cache (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            asin VARCHAR(10) NOT NULL,
+            amazon_domain VARCHAR(50) NOT NULL DEFAULT 'amazon.com',
+            cache_date DATE NOT NULL,
+            raw_json JSON NOT NULL,
+            flat_json JSON NOT NULL,
+            cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_asin_domain_day (asin, amazon_domain, cache_date),
+            INDEX idx_cache_date (cache_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
         const agentRows = await p.query('SELECT COUNT(*) as cnt FROM ai_agents', { type: QueryTypes.SELECT });
         if (agentRows[0].cnt === 0) {
             const agents = [

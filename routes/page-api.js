@@ -1736,6 +1736,147 @@ function registerProtectedPageApi(app, ctx) {
             res.status(500).json({ error: e.message });
         }
     });
+
+    const asinCrawler = require('../service/asin-crawler');
+    const { exportJobToXlsx, exportJobToJson } = require('../service/asin-crawler/export');
+    const tokenPool = require('../service/asin-crawler/token-pool');
+
+    app.get('/api/asin-crawler/tokens', async (req, res) => {
+        try {
+            const tokens = await tokenPool.listTokens();
+            const active_count = await tokenPool.countActiveTokens();
+            res.json({ tokens, active_count });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/asin-crawler/tokens', async (req, res) => {
+        try {
+            const body = req.body || {};
+            const tokensText = body.tokens != null ? body.tokens : body.token;
+            const added = await tokenPool.addTokens({
+                tokensText,
+                label: body.label
+            });
+            res.json({
+                tokens: added,
+                added_count: added.length,
+                token: added.length === 1 ? added[0] : undefined
+            });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/asin-crawler/tokens/:id/disable', async (req, res) => {
+        try {
+            const ok = await tokenPool.disableToken(req.params.id);
+            if (!ok) return res.status(404).json({ error: 'Token 不存在' });
+            res.json({ status: 'ok' });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/asin-crawler/tokens/:id/reset', async (req, res) => {
+        try {
+            const ok = await tokenPool.resetToken(req.params.id);
+            if (!ok) return res.status(404).json({ error: 'Token 不存在' });
+            res.json({ status: 'ok' });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/asin-crawler/jobs', async (req, res) => {
+        try {
+            const { job, warnings } = await asinCrawler.createJob({
+                asinsText: req.body.asins,
+                amazonDomain: req.body.amazon_domain,
+                createdBy: req.currentUser?.id
+            });
+            res.json({ job, warnings });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/asin-crawler/jobs', async (req, res) => {
+        try {
+            const limit = Math.min(Number(req.query.limit || 20), 100);
+            const offset = Number(req.query.offset || 0);
+            const jobs = await asinCrawler.listJobs({ limit, offset });
+            res.json({ jobs });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/asin-crawler/jobs/:id', async (req, res) => {
+        try {
+            const job = await asinCrawler.getJob(req.params.id);
+            if (!job) return res.status(404).json({ error: '任务不存在' });
+            res.json({ job });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/asin-crawler/jobs/:id/items', async (req, res) => {
+        try {
+            const items = await asinCrawler.listJobItems(req.params.id);
+            res.json({ items });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/asin-crawler/items/:id/json', async (req, res) => {
+        try {
+            const item = await asinCrawler.getJobItemJson(req.params.id);
+            if (!item) return res.status(404).json({ error: '记录不存在' });
+            res.json({ item });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/asin-crawler/jobs/:id/export.xlsx', async (req, res) => {
+        try {
+            const job = await asinCrawler.getJob(req.params.id);
+            if (!job) return res.status(404).json({ error: '任务不存在' });
+            const { buffer, filename } = await exportJobToXlsx(job.id);
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.send(buffer);
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/asin-crawler/jobs/:id/export.json', async (req, res) => {
+        try {
+            const job = await asinCrawler.getJob(req.params.id);
+            if (!job) return res.status(404).json({ error: '任务不存在' });
+            const { buffer, filename } = await exportJobToJson(job.id);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.send(buffer);
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/asin-crawler/jobs/:id/cancel', async (req, res) => {
+        try {
+            const job = await asinCrawler.cancelJob(req.params.id);
+            if (!job) return res.status(404).json({ error: '任务不存在' });
+            res.json({ job });
+        } catch (e) {
+            res.status(400).json({ error: e.message });
+        }
+    });
 }
 
 module.exports = { registerPublicPageApi, registerProtectedPageApi };

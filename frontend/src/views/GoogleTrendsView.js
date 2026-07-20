@@ -236,7 +236,7 @@ export default {
     },
     template: `<div class="page-header">
                 <h1>Google Trends</h1>
-                <p class="page-subtitle">批量查询关键词搜索趋势，列表展示热度指数与走势</p>
+                <p class="page-subtitle">通过 SearchAPI 批量查询关键词搜索趋势，列表展示热度指数与走势</p>
             </div>
 
             <div class="trends-search-card module-card">
@@ -260,7 +260,7 @@ export default {
                             <button type="button" class="btn-primary" :disabled="loading || !keywordsText.trim()" @click="searchTrends">
                                 {{ loading ? '查询中…' : '开始查询' }}
                             </button>
-                            <span v-if="loading" class="trends-hint">逐个查询，约每 3 秒 1 个关键词</span>
+                            <span v-if="loading" class="trends-hint">批量查询中（每批最多 5 个关键词）…</span>
                         </div>
                     </div>
                     <div v-if="error" class="trends-alert trends-alert-error">{{ error }}</div>

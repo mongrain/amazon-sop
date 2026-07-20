@@ -25,6 +25,7 @@ import ProductView from '@/views/ProductView.js';
 import ProductVersionView from '@/views/ProductVersionView.js';
 import ProductSelectionView from '@/views/ProductSelectionView.js';
 import GoogleTrendsView from '@/views/GoogleTrendsView.js';
+import AsinCrawlerView from '@/views/AsinCrawlerView.js';
 import AmcAdsView from '@/views/AmcAdsView.js';
 import AiOfficeView from '@/views/AiOfficeView.js';
 import AiOfficeTaskView from '@/views/AiOfficeTaskView.js';
@@ -45,6 +46,7 @@ const layoutChildren = [
     { path: 'competitors', name: 'competitors', component: CompetitorsView, meta: { active: 'competitors', title: '竞品库' } },
     { path: 'product-selection', name: 'product-selection', component: ProductSelectionView, meta: { active: 'product_selection', title: '选品分析' } },
     { path: 'google-trends', name: 'google-trends', component: GoogleTrendsView, meta: { active: 'google_trends', title: 'Google Trends' } },
+    { path: 'asin-crawler', name: 'asin-crawler', component: AsinCrawlerView, meta: { active: 'asin_crawler', title: 'ASIN 爬虫' } },
     { path: 'amc-ads', name: 'amc-ads', component: AmcAdsView, meta: { active: 'amc_ads', title: 'AMC 广告' } },
     { path: 'product-elimination', name: 'product-elimination', component: ProductEliminationView, meta: { active: 'product_elimination', title: '产品淘汰分析' } },
     { path: 'users', name: 'users', component: UsersView, meta: { active: 'users', title: '人员管理' } },
