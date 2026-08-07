@@ -1,6 +1,7 @@
 require('dotenv').config();
 const axios = require('axios');
 const { handler } = require('./service/imagediff');
+const { perceptualHashCompare } = require('./service/image-phash');
 
 const GPT_API_URL = process.env.GPT_API_URL || 'http://localhost:8000/v1/chat/completions';
 const GPT_API_KEY = process.env.GPT_API_KEY || 'eb3bf85f539499df36e2eec15669d57e';
@@ -69,6 +70,30 @@ async function compareStorefrontImagesBySiderAi(imageUrlA, imageUrlB) {
     return result;
 }
 
+function unchangedResult() {
+    return {
+        is_changed: false,
+        promotion_type: 'None',
+        change_details: [],
+        summary: ''
+    };
+}
+
+async function compareStorefrontImages(imageUrlA, imageUrlB) {
+    try {
+        const threshold = Number(process.env.STOREFRONT_PHASH_THRESHOLD || 10);
+        const pre = await perceptualHashCompare(imageUrlA, imageUrlB, { threshold });
+        console.log('感知哈希预筛', { distance: pre.distance, threshold: pre.threshold, similar: pre.similar });
+        if (pre.similar) {
+            return unchangedResult();
+        }
+    } catch (err) {
+        console.warn('感知哈希预筛失败，按无修改处理', err.message || err);
+        return unchangedResult();
+    }
+    return compareStorefrontImagesBySiderAi(imageUrlA, imageUrlB);
+}
+
 async function chat(messages) {
     const payload = {
         model: GPT_MODEL,
@@ -109,4 +134,4 @@ async function chatCompletionText(systemPrompt, userContent, { model = GPT_MODEL
     return String(content).trim();
 }
 
-module.exports = { compareStorefrontImages: compareStorefrontImagesBySiderAi, parseGptJsonContent, chatCompletionJson, chatCompletionText, chat };
+module.exports = { compareStorefrontImages, parseGptJsonContent, chatCompletionJson, chatCompletionText, chat };
