@@ -1,6 +1,10 @@
 const XLSX = require('xlsx');
 const { queryAll } = require('../../../database');
-const { buildColumnLabels } = require('./column-labels');
+const {
+    projectExportRow,
+    getExportColumnKeys,
+    getExportColumnLabels
+} = require('./export-columns');
 
 function buildExportFilename(asins, ext = 'xlsx') {
     const list = (asins || []).map(a => String(a || '').trim().toUpperCase()).filter(Boolean);
@@ -20,13 +24,14 @@ async function buildExportData(jobId) {
         [Number(jobId)]
     );
     const asins = items.map(item => item.asin);
+    const columns = getExportColumnKeys();
+    const columnLabels = getExportColumnLabels();
 
     if (!items.length) {
-        const columns = ['_crawl_asin'];
         return {
             columns,
             rows: [],
-            columnLabels: buildColumnLabels(columns),
+            columnLabels,
             asins
         };
     }
@@ -35,19 +40,9 @@ async function buildExportData(jobId) {
         const flat = typeof item.flat_json === 'string'
             ? JSON.parse(item.flat_json)
             : (item.flat_json || {});
-        return { _crawl_asin: item.asin, ...flat };
+        return projectExportRow({ _crawl_asin: item.asin, ...flat });
     });
 
-    const columnSet = new Set(['_crawl_asin']);
-    for (const row of rows) {
-        Object.keys(row).forEach(k => columnSet.add(k));
-    }
-    const columns = [...columnSet].sort((a, b) => {
-        if (a === '_crawl_asin') return -1;
-        if (b === '_crawl_asin') return 1;
-        return a.localeCompare(b);
-    });
-    const columnLabels = buildColumnLabels(columns);
     return { columns, rows, columnLabels, asins };
 }
 

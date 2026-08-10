@@ -3,7 +3,11 @@ const tokenPool = require('../token-pool');
 const { kickWorker } = require('./job-runner');
 
 const ASIN_RE = /^[A-Z0-9]{10}$/;
-const MAX_ASINS = Number(process.env.SEARCHAPI_MAX_ASINS_PER_JOB || 500);
+const MAX_ASINS = Number(
+    process.env.SCRAPERAPI_MAX_ASINS_PER_JOB
+    || process.env.SEARCHAPI_MAX_ASINS_PER_JOB
+    || 100
+);
 
 function mapJobRow(row) {
     if (!row) return null;
@@ -51,7 +55,7 @@ function parseAsinInput(text) {
 async function createJob({ asinsText, amazonDomain, createdBy }) {
     const activeCount = await tokenPool.countActiveTokens();
     if (activeCount <= 0) {
-        throw new Error('无可用 SearchAPI token，请先添加 token');
+        throw new Error('无可用 ScraperAPI Key，请先添加 Key');
     }
 
     const { asins, warnings } = parseAsinInput(asinsText);

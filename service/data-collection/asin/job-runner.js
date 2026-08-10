@@ -1,9 +1,13 @@
 const tokenPool = require('../token-pool');
-const { fetchAmazonProduct, isTokenExhaustedError, isRetryableError } = require('../searchapi');
+const { fetchAmazonProduct, isTokenExhaustedError, isRetryableError } = require('../scraperapi');
 const { flattenForCsv } = require('./flatten');
 const asinCache = require('./asin-cache');
 
-const REQUEST_INTERVAL_MS = Number(process.env.SEARCHAPI_REQUEST_INTERVAL_MS || 2000);
+const REQUEST_INTERVAL_MS = Number(
+    process.env.SCRAPERAPI_REQUEST_INTERVAL_MS
+    || process.env.SEARCHAPI_REQUEST_INTERVAL_MS
+    || 500
+);
 const RETRY_DELAY_MS = 3000;
 const MAX_NETWORK_RETRIES = 2;
 
@@ -194,13 +198,13 @@ async function executeItem(item) {
         while (true) {
             const token = await tokenPool.acquireToken();
             if (!token) {
-                lastError = '无可用 SearchAPI token，请添加或重置 token';
+                lastError = '无可用 ScraperAPI Key，请添加或重置 Key';
                 await markItemFailed(item.id, item.job_id, lastError);
                 await markJobFailed(item.job_id, lastError);
                 return;
             }
             if (triedTokenIds.has(token.id)) {
-                lastError = lastError || '全部 SearchAPI token 已失效，请添加或重置 token';
+                lastError = lastError || '全部 ScraperAPI Key 已失效，请添加或重置 Key';
                 await markItemFailed(item.id, item.job_id, lastError);
                 await markJobFailed(item.job_id, lastError);
                 return;

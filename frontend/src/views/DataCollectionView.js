@@ -550,7 +550,7 @@ export default {
     },
     template: `<div class="page-header">
                 <h1>数据采集</h1>
-                <p class="page-desc">SearchAPI · Token · ASIN 爬虫 · Google Trends</p>
+                <p class="page-desc">ScraperAPI · Token · ASIN 爬虫 · Google Trends</p>
             </div>
 
             <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border-color, #e5e7eb);padding-bottom:8px;">
@@ -574,7 +574,7 @@ export default {
                     </div>
                     <div class="module-body">
                         <form @submit.prevent="addToken" style="display:grid;gap:12px;max-width:720px;margin-bottom:16px;">
-                            <textarea v-model="tokenForm.token" class="sop-remark" rows="4" placeholder="每行一个 SearchAPI Token" required></textarea>
+                            <textarea v-model="tokenForm.token" class="sop-remark" rows="4" placeholder="每行一个 ScraperAPI Key" required></textarea>
                             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
                                 <input v-model="tokenForm.label" class="search-input" placeholder="备注（可选，批量添加时共用）" style="flex:1;min-width:200px;">
                                 <button type="submit" class="btn-primary" :disabled="tokenSaving">{{ tokenSaving ? '添加中...' : '添加 Token' }}</button>
@@ -750,7 +750,7 @@ export default {
                                 <button type="button" class="btn-primary" :disabled="trendsLoading || !keywordsText.trim()" @click="searchTrends">
                                     {{ trendsLoading ? '查询中…' : '开始查询' }}
                                 </button>
-                                <span v-if="trendsLoading" class="trends-hint">批量查询中（每批最多 5 个关键词）…</span>
+                                <span v-if="trendsLoading" class="trends-hint">批量查询中（默认逐个关键词请求）…</span>
                             </div>
                         </div>
                         <div v-if="trendsError" class="trends-alert trends-alert-error">{{ trendsError }}</div>

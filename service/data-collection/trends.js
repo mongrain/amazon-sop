@@ -2,7 +2,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const tokenPool = require('./token-pool');
-const { fetchSearchApi, isTokenExhaustedError, isRetryableError } = require('./searchapi');
+const { fetchUrlViaScraperApi, isTokenExhaustedError, isRetryableError } = require('./scraperapi');
+const { parseTrendsTimeline, buildTrendsExploreUrl } = require('./trends-parse');
 
 const CACHE_ROOT = path.join(__dirname, '../../data/google-trends/cache');
 const CACHE_TTL_MS = Number(process.env.GOOGLE_TRENDS_CACHE_TTL_MS || 24 * 60 * 60 * 1000);
@@ -14,8 +15,7 @@ const REQUEST_INTERVAL_MS = Number(
 const DEFAULT_GEO = String(process.env.GOOGLE_TRENDS_GEO || 'US').trim().toUpperCase();
 const DEFAULT_HL = String(process.env.GOOGLE_TRENDS_HL || 'en-US').trim();
 const DEFAULT_TZ = Number(process.env.GOOGLE_TRENDS_TZ || 360);
-/** SearchAPI TIMESERIES 单次最多 5 个关键词 */
-const BATCH_SIZE = Math.min(5, Math.max(1, Number(process.env.GOOGLE_TRENDS_BATCH_SIZE || 5)));
+const BATCH_SIZE = Math.max(1, Number(process.env.GOOGLE_TRENDS_BATCH_SIZE || 1));
 
 const INTERVAL_TIME_MAP = {
     h: 'now 1-H',
@@ -80,12 +80,12 @@ function formatRequestError(error) {
             ? body.slice(0, 120).replace(/\s+/g, ' ')
             : (body?.error || body?.message || '');
         if (status === 401 || status === 403) {
-            return 'SearchAPI token 无效或额度已用尽，请在 ASIN 爬虫页面添加或重置 token';
+            return 'ScraperAPI token 无效或额度已用尽，请在 ASIN 爬虫页面添加或重置 token';
         }
-        return `SearchAPI 返回 HTTP ${status}${detail ? `：${detail}` : ''}`;
+        return `ScraperAPI 返回 HTTP ${status}${detail ? `：${detail}` : ''}`;
     }
     if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
-        return 'SearchAPI 请求超时';
+        return 'ScraperAPI 请求超时';
     }
     return error.message || '未知错误';
 }
@@ -98,45 +98,22 @@ function chunkArray(list, size) {
     return chunks;
 }
 
-function mapSearchApiTimeline(timeline, keyword) {
-    const normalizedKeyword = normalizeKeyword(keyword).toLowerCase();
-    return timeline.map(row => {
-        const values = Array.isArray(row.values) ? row.values : [];
-        let entry = values.find(item => String(item.query || '').trim().toLowerCase() === normalizedKeyword);
-        if (!entry && values.length === 1) entry = values[0];
-        const value = Number(entry?.extracted_value ?? entry?.value ?? 0);
-        const timestamp = Number(row.timestamp);
-        const date = Number.isFinite(timestamp)
-            ? new Date(timestamp * 1000).toISOString().slice(0, 10)
-            : '';
-        return {
-            date,
-            time: row.timestamp,
-            formattedTime: row.date || date,
-            searches: Number.isFinite(value) ? value : 0,
-            value: Number.isFinite(value) ? value : 0,
-            formattedValue: entry?.value != null ? String(entry.value) : String(Number.isFinite(value) ? value : 0),
-            empty: false
-        };
-    });
-}
-
 /**
- * 批量拉取关键词趋势（SearchAPI 单次最多 5 个，用逗号拼接）
+ * 批量拉取关键词趋势（ScraperAPI 逐关键词抓取 explore 页面并解析）
  * @returns {Promise<Map<string, object>>} keyword -> { code, message, success, data }
  */
-async function fetchTrendsBatchFromSearchApi(keywords, interval, geo) {
+async function fetchTrendsBatchFromScraperApi(keywords, interval, geo) {
     const list = keywords.map(normalizeKeyword).filter(Boolean);
     if (!list.length) {
         throw new Error('关键词不能为空');
     }
     if (list.length > BATCH_SIZE) {
-        throw new Error(`单次 SearchAPI 请求最多 ${BATCH_SIZE} 个关键词`);
+        throw new Error(`单次 ScraperAPI 请求最多 ${BATCH_SIZE} 个关键词`);
     }
 
     const activeCount = await tokenPool.countActiveTokens();
     if (activeCount <= 0) {
-        throw new Error('无可用 SearchAPI token，请先在 ASIN 爬虫页面添加 token');
+        throw new Error('无可用 ScraperAPI token，请先在 ASIN 爬虫页面添加 token');
     }
 
     const triedTokenIds = new Set();
@@ -145,39 +122,33 @@ async function fetchTrendsBatchFromSearchApi(keywords, interval, geo) {
     while (true) {
         const token = await tokenPool.acquireToken();
         if (!token) {
-            throw new Error(lastError || '无可用 SearchAPI token，请先在 ASIN 爬虫页面添加 token');
+            throw new Error(lastError || '无可用 ScraperAPI token，请先在 ASIN 爬虫页面添加 token');
         }
         if (triedTokenIds.has(token.id)) {
-            throw new Error(lastError || '全部 SearchAPI token 已失效，请添加或重置 token');
+            throw new Error(lastError || '全部 ScraperAPI token 已失效，请添加或重置 token');
         }
         triedTokenIds.add(token.id);
 
         try {
             await tokenPool.touchTokenUsed(token.id);
-            const params = {
-                engine: 'google_trends',
-                q: list.join(','),
-                data_type: 'TIMESERIES',
-                geo,
-                time: resolveGoogleTime(interval),
-                hl: DEFAULT_HL,
-                tz: DEFAULT_TZ
-            };
-            const data = await fetchSearchApi({ params, apiKey: token.token });
-            const timeline = data.interest_over_time && Array.isArray(data.interest_over_time.timeline_data)
-                ? data.interest_over_time.timeline_data
-                : [];
-            if (!timeline.length) {
-                throw new Error('SearchAPI 未返回 interest_over_time 数据');
-            }
-
+            const time = resolveGoogleTime(interval);
             const resultMap = new Map();
+
             for (const keyword of list) {
+                const url = buildTrendsExploreUrl({
+                    keyword,
+                    geo,
+                    time,
+                    hl: DEFAULT_HL,
+                    tz: DEFAULT_TZ
+                });
+                const body = await fetchUrlViaScraperApi({ url, apiKey: token.token });
+                const dataPoints = parseTrendsTimeline(body, keyword);
                 resultMap.set(keyword, {
                     code: 'OK',
-                    message: 'Google Trends relative interest via SearchAPI, scaled 0-100',
+                    message: 'Google Trends relative interest via ScraperAPI, scaled 0-100',
                     success: true,
-                    data: mapSearchApiTimeline(timeline, keyword)
+                    data: dataPoints
                 });
             }
             return resultMap;
@@ -297,7 +268,7 @@ async function getGoogleTrendsBatch(keywords, options = {}) {
     for (const chunk of chunks) {
         try {
             const apiMap = await rateLimiter.schedule(
-                () => fetchTrendsBatchFromSearchApi(chunk, interval, geo)
+                () => fetchTrendsBatchFromScraperApi(chunk, interval, geo)
             );
             const cachedAt = new Date().toISOString();
             for (const keyword of chunk) {
@@ -305,7 +276,7 @@ async function getGoogleTrendsBatch(keywords, options = {}) {
                 if (!apiResult) {
                     resultByKeyword.set(
                         keyword,
-                        buildErrorResult(keyword, interval, geo, 'SearchAPI 未返回该关键词数据')
+                        buildErrorResult(keyword, interval, geo, 'ScraperAPI 未返回该关键词数据')
                     );
                     continue;
                 }
@@ -320,7 +291,7 @@ async function getGoogleTrendsBatch(keywords, options = {}) {
                     cached_at: cachedAt
                 };
                 writeCache(keyword, interval, geo, payload);
-                resultByKeyword.set(keyword, { ...payload, source: 'searchapi' });
+                resultByKeyword.set(keyword, { ...payload, source: 'scraperapi' });
             }
         } catch (error) {
             const message = error.message || formatRequestError(error);
@@ -329,7 +300,7 @@ async function getGoogleTrendsBatch(keywords, options = {}) {
                 if (stale && !forceRefresh) {
                     resultByKeyword.set(keyword, {
                         ...buildCachedResult(keyword, interval, geo, stale, 'stale_cache'),
-                        message: `SearchAPI 请求失败，已返回过期缓存：${message}`,
+                        message: `ScraperAPI 请求失败，已返回过期缓存：${message}`,
                         warning: message
                     });
                 } else {
