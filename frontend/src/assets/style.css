@@ -28,6 +28,18 @@ body {
 }
 .sidebar-nav a:hover { background: rgba(255,255,255,0.05); }
 .sidebar-nav a.active { background: rgba(64,158,255,0.15); border-left-color: var(--primary); color: #fff; }
+.sidebar-group-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 12px 20px; color: var(--sidebar-text);
+    background: transparent; border: none; border-left: 3px solid transparent;
+    font-size: 14px; cursor: pointer; text-align: left;
+}
+.sidebar-group-toggle:hover { background: rgba(255,255,255,0.05); }
+.sidebar-group-toggle.active {
+    background: rgba(64,158,255,0.15); border-left-color: var(--primary); color: #fff;
+}
+.sidebar-group-caret { font-size: 12px; opacity: 0.7; }
+.sidebar-subnav a { padding-left: 36px; font-size: 13px; }
 .main-content { margin-left: var(--sidebar-width); flex: 1; padding: 24px 32px; min-width: 0; }
 .page-header { margin-bottom: 24px; }
 .page-header h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; }

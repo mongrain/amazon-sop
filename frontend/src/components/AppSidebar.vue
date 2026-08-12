@@ -1,9 +1,30 @@
 <script setup>
-defineProps({
+import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+
+const props = defineProps({
     active: { type: String, default: '' },
     currentUser: { type: Object, default: null }
 });
 defineEmits(['logout']);
+
+const router = useRouter();
+const adsExpanded = ref(false);
+
+const isAdsBoardActive = computed(() => props.active === 'sprints' || props.active === 'metrics');
+
+watch(
+    isAdsBoardActive,
+    (on) => {
+        if (on) adsExpanded.value = true;
+    },
+    { immediate: true }
+);
+
+function onAdsBoardClick() {
+    adsExpanded.value = !adsExpanded.value;
+    router.push('/sprints');
+}
 </script>
 
 <template>
@@ -14,10 +35,19 @@ defineEmits(['logout']);
         </div>
         <nav class="sidebar-nav">
             <router-link to="/dashboard" :class="{ active: active === 'dashboard' }">产品看板</router-link>
-            <router-link to="/sprints" :class="{ active: active === 'sprints' }">冲刺项目</router-link>
-            <router-link to="/metrics/manual" :class="{ active: active === 'metrics' }">每日填报</router-link>
+
+            <div class="sidebar-group" :class="{ open: adsExpanded, active: isAdsBoardActive }">
+                <button type="button" class="sidebar-group-toggle" :class="{ active: isAdsBoardActive }" @click="onAdsBoardClick">
+                    <span>广告看板</span>
+                    <span class="sidebar-group-caret">{{ adsExpanded ? '▾' : '▸' }}</span>
+                </button>
+                <div v-show="adsExpanded" class="sidebar-subnav">
+                    <router-link to="/sprints" :class="{ active: active === 'sprints' }">冲刺广告</router-link>
+                    <router-link to="/metrics/manual" :class="{ active: active === 'metrics' }">每日填报</router-link>
+                </div>
+            </div>
+
             <router-link to="/daily-rants" :class="{ active: active === 'daily_rants' }">碎碎念</router-link>
-            <router-link to="/tickets" :class="{ active: active === 'tickets' }">工单看板</router-link>
             <router-link to="/ai-office" :class="{ active: active === 'ai_office' }">AI 办公室</router-link>
             <router-link to="/annual-activities" :class="{ active: active === 'annual_activities' }">年度活动</router-link>
             <router-link to="/users" :class="{ active: active === 'users' }">人员管理</router-link>
