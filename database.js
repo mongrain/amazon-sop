@@ -233,8 +233,8 @@ async function initDb() {
             target_cycle_days DECIMAL(10,2) NOT NULL DEFAULT 14.00 COMMENT '目标周期天数(可为小数)',
             current_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '当前日均单量(可为小数)',
             target_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '目标日均单量(可为小数)',
-            current_rank INT DEFAULT NULL,
-            target_rank INT DEFAULT NULL,
+            current_rank VARCHAR(255) DEFAULT NULL,
+            target_rank VARCHAR(255) DEFAULT NULL,
             promo_tacos_limit DECIMAL(10,2) DEFAULT NULL,
             stable_tacos_target DECIMAL(10,2) DEFAULT NULL,
             max_loss_7d DECIMAL(10,2) DEFAULT NULL,
@@ -244,6 +244,11 @@ async function initDb() {
             exit_conditions TEXT,
             profit_margin DECIMAL(6,2) DEFAULT NULL,
             acos_limit DECIMAL(10,2) DEFAULT NULL,
+            ctr_7d DECIMAL(10,4) DEFAULT NULL COMMENT '7日日均CTR(%)',
+            cvr_7d DECIMAL(10,4) DEFAULT NULL COMMENT '7日日均CVR(%)',
+            cpc DECIMAL(10,4) DEFAULT NULL COMMENT 'CPC($)',
+            required_impressions DECIMAL(14,2) DEFAULT NULL COMMENT '所需曝光',
+            budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算上限($)',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uk_sprint_asin (asin),
@@ -261,6 +266,56 @@ async function initDb() {
              MODIFY COLUMN target_cycle_days DECIMAL(10,2) NOT NULL DEFAULT 14.00 COMMENT '目标周期天数(可为小数)',
              MODIFY COLUMN current_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '当前日均单量(可为小数)',
              MODIFY COLUMN target_daily_orders DECIMAL(10,4) DEFAULT NULL COMMENT '目标日均单量(可为小数)'`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects
+             MODIFY COLUMN current_rank VARCHAR(255) DEFAULT NULL,
+             MODIFY COLUMN target_rank VARCHAR(255) DEFAULT NULL`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN ctr_7d DECIMAL(10,4) DEFAULT NULL COMMENT '7日日均CTR(%)' AFTER acos_limit`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN cvr_7d DECIMAL(10,4) DEFAULT NULL COMMENT '7日日均CVR(%)' AFTER ctr_7d`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN cpc DECIMAL(10,4) DEFAULT NULL COMMENT 'CPC($)' AFTER cvr_7d`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN required_impressions DECIMAL(14,2) DEFAULT NULL COMMENT '所需曝光' AFTER cpc`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算上限($)' AFTER required_impressions`
         );
     } catch (e) {
         if (!isSafeMigrationError(e)) {}
