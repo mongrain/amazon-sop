@@ -636,7 +636,7 @@ function registerProtectedPageApi(app, ctx) {
             numOrNull(body.stable_tacos_target),
             numOrNull(body.max_loss_7d),
             intOrNull(body.inventory_days),
-            String(body.competitor_action || '').trim() || null,
+            null,
             body.page_ok ? 1 : 0,
             String(body.exit_conditions || '').trim() || null,
             numOrNull(body.profit_margin),
@@ -645,7 +645,10 @@ function registerProtectedPageApi(app, ctx) {
             numOrNull(body.cvr_7d),
             numOrNull(body.cpc),
             numOrNull(body.required_impressions),
-            numOrNull(body.budget_cap)
+            numOrNull(body.budget_cap),
+            String(body.sprint_goal || '').trim() || null,
+            String(body.sprint_keywords || '').trim() || null,
+            numOrNull(body.fba_warehouse_qty)
         ];
 
         if (id) {
@@ -656,6 +659,7 @@ function registerProtectedPageApi(app, ctx) {
                  promo_tacos_limit = ?, stable_tacos_target = ?, max_loss_7d = ?, inventory_days = ?,
                  competitor_action = ?, page_ok = ?, exit_conditions = ?, profit_margin = ?, acos_limit = ?,
                  ctr_7d = ?, cvr_7d = ?, cpc = ?, required_impressions = ?, budget_cap = ?,
+                 sprint_goal = ?, sprint_keywords = ?, fba_warehouse_qty = ?,
                  updated_at = NOW()
                  WHERE id = ?`,
                 [asin, ...values, id]
@@ -667,8 +671,9 @@ function registerProtectedPageApi(app, ctx) {
                   current_daily_orders, target_daily_orders, current_rank, target_rank,
                   promo_tacos_limit, stable_tacos_target, max_loss_7d, inventory_days,
                   competitor_action, page_ok, exit_conditions, profit_margin, acos_limit,
-                  ctr_7d, cvr_7d, cpc, required_impressions, budget_cap)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  ctr_7d, cvr_7d, cpc, required_impressions, budget_cap,
+                  sprint_goal, sprint_keywords, fba_warehouse_qty)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [asin, ...values]
             );
         }
