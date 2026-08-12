@@ -249,6 +249,9 @@ async function initDb() {
             cpc DECIMAL(10,4) DEFAULT NULL COMMENT 'CPC($)',
             required_impressions DECIMAL(14,2) DEFAULT NULL COMMENT '所需曝光',
             budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算上限($)',
+            sprint_goal VARCHAR(500) DEFAULT NULL,
+            sprint_keywords TEXT,
+            fba_warehouse_qty DECIMAL(12,2) DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uk_sprint_asin (asin),
@@ -316,6 +319,30 @@ async function initDb() {
     try {
         await p.query(
             `ALTER TABLE sprint_projects ADD COLUMN budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算上限($)' AFTER required_impressions`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN sprint_goal VARCHAR(500) DEFAULT NULL AFTER budget_cap`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN sprint_keywords TEXT AFTER sprint_goal`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN fba_warehouse_qty DECIMAL(12,2) DEFAULT NULL AFTER sprint_keywords`
         );
     } catch (e) {
         if (!isSafeMigrationError(e)) {}
