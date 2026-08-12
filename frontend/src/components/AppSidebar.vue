@@ -1,6 +1,5 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 const props = defineProps({
     active: { type: String, default: '' },
@@ -8,7 +7,6 @@ const props = defineProps({
 });
 defineEmits(['logout']);
 
-const router = useRouter();
 const adsExpanded = ref(false);
 
 const isAdsBoardActive = computed(() => props.active === 'sprints' || props.active === 'metrics');
@@ -22,12 +20,7 @@ watch(
 );
 
 function onAdsBoardClick() {
-    if (isAdsBoardActive.value) {
-        adsExpanded.value = true;
-    } else {
-        adsExpanded.value = !adsExpanded.value;
-    }
-    router.push('/sprints');
+    adsExpanded.value = !adsExpanded.value;
 }
 </script>
 
