@@ -22,7 +22,11 @@ watch(
 );
 
 function onAdsBoardClick() {
-    adsExpanded.value = !adsExpanded.value;
+    if (isAdsBoardActive.value) {
+        adsExpanded.value = true;
+    } else {
+        adsExpanded.value = !adsExpanded.value;
+    }
     router.push('/sprints');
 }
 </script>
@@ -36,7 +40,7 @@ function onAdsBoardClick() {
         <nav class="sidebar-nav">
             <router-link to="/dashboard" :class="{ active: active === 'dashboard' }">产品看板</router-link>
 
-            <div class="sidebar-group" :class="{ open: adsExpanded, active: isAdsBoardActive }">
+            <div class="sidebar-group">
                 <button type="button" class="sidebar-group-toggle" :class="{ active: isAdsBoardActive }" @click="onAdsBoardClick">
                     <span>广告看板</span>
                     <span class="sidebar-group-caret">{{ adsExpanded ? '▾' : '▸' }}</span>
