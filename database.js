@@ -359,31 +359,7 @@ async function initDb() {
     }
 
     try {
-        await p.query(`CREATE TABLE IF NOT EXISTS issue_tickets (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            sprint_id INT DEFAULT NULL,
-            asin VARCHAR(30) NOT NULL,
-            ticket_type VARCHAR(50) NOT NULL,
-            severity ENUM('S','A','B','C') DEFAULT 'B',
-            owner_id INT DEFAULT NULL,
-            co_owner_id INT DEFAULT NULL,
-            status ENUM('TODO','PENDING_DESIGN','WAITING_VERIFY','RESOLVED','FAILED') NOT NULL DEFAULT 'TODO',
-            sla_deadline DATETIME DEFAULT NULL,
-            trigger_reason TEXT,
-            design_request TEXT,
-            design_asset_url VARCHAR(1000) DEFAULT NULL,
-            verify_evidence TEXT,
-            verify_file_url VARCHAR(1000) DEFAULT NULL,
-            resolved_at DATETIME DEFAULT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (sprint_id) REFERENCES sprint_projects(id) ON DELETE SET NULL,
-            FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
-            FOREIGN KEY (co_owner_id) REFERENCES users(id) ON DELETE SET NULL,
-            INDEX idx_status_deadline (status, sla_deadline),
-            INDEX idx_asin_created (asin, created_at),
-            INDEX idx_sprint (sprint_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        await p.query('DROP TABLE IF EXISTS issue_tickets');
     } catch (e) {
         // Silently skip
     }
