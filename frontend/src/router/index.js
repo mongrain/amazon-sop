@@ -19,8 +19,6 @@ import SprintFormView from '@/views/SprintFormView.js';
 import ReviewsView from '@/views/ReviewsView.js';
 import ReviewFormView from '@/views/ReviewFormView.js';
 import MetricsManualView from '@/views/MetricsManualView.js';
-import TicketsView from '@/views/TicketsView.js';
-import TicketDetailView from '@/views/TicketDetailView.js';
 import ProductView from '@/views/ProductView.js';
 import ProductVersionView from '@/views/ProductVersionView.js';
 import ProductSelectionView from '@/views/ProductSelectionView.js';
@@ -54,8 +52,6 @@ const layoutChildren = [
     { path: 'reviews', name: 'reviews', component: ReviewsView, meta: { active: 'sprints', title: '周复盘' } },
     { path: 'reviews/:id', name: 'review-edit', component: ReviewFormView, meta: { active: 'sprints', title: '周复盘填写' } },
     { path: 'metrics/manual', name: 'metrics-manual', component: MetricsManualView, meta: { active: 'metrics', title: '每日数据填报' } },
-    { path: 'tickets', name: 'tickets', component: TicketsView, meta: { active: 'tickets', title: '工单看板' } },
-    { path: 'tickets/:id', name: 'ticket-detail', component: TicketDetailView, meta: { active: 'tickets', title: '工单详情' } },
     { path: 'ai-office', name: 'ai-office', component: AiOfficeView, meta: { active: 'ai_office', title: 'AI 办公室' } },
     { path: 'ai-office/tasks/:id', name: 'ai-office-task', component: AiOfficeTaskView, meta: { active: 'ai_office', title: 'AI 任务详情' } },
     { path: 'product/:asin', name: 'product', component: ProductView, meta: { active: '', title: '产品详情' } },
