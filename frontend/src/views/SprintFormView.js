@@ -5,7 +5,8 @@ import {
     calcEndDate,
     calcRequiredImpressions,
     calcBudgetCap,
-    calcFinanceDefaults
+    calcFinanceDefaults,
+    toFiniteOrNull
 } from '@/utils/sprint-form-calc.js';
 
 function resolveSprintId(route) {
@@ -115,7 +116,7 @@ export default {
                     error.value = '无产品经济数据';
                     return;
                 }
-                lastProfitUsd.value = Number.isFinite(Number(c.profit_usd)) ? Number(c.profit_usd) : null;
+                lastProfitUsd.value = toFiniteOrNull(c.profit_usd);
                 const d = calcFinanceDefaults({
                     profitMarginRatio: c.profit_margin,
                     profitUsd: c.profit_usd,

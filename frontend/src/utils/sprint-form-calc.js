@@ -25,11 +25,17 @@ function calcBudgetCap(requiredImpressions, cpc) {
     return Math.round(imp * p * 100) / 100;
 }
 
+function toFiniteOrNull(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+
 function calcFinanceDefaults({ profitMarginRatio, profitUsd, currentDailyOrders }) {
-    const ratio = Number(profitMarginRatio);
-    const marginPct = Number.isFinite(ratio) ? Math.round(ratio * 10000) / 100 : null;
-    const profit = Number(profitUsd);
-    const orders = Number(currentDailyOrders);
+    const ratio = toFiniteOrNull(profitMarginRatio);
+    const marginPct = ratio == null ? null : Math.round(ratio * 10000) / 100;
+    const profit = toFiniteOrNull(profitUsd);
+    const orders = toFiniteOrNull(currentDailyOrders);
     let maxLoss = null;
     if (Number.isFinite(profit) && Number.isFinite(orders) && orders > 0) {
         maxLoss = Math.round(profit * orders * 7 * 100) / 100;
@@ -43,7 +49,7 @@ function calcFinanceDefaults({ profitMarginRatio, profitUsd, currentDailyOrders 
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcFinanceDefaults };
+    module.exports = { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcFinanceDefaults, toFiniteOrNull };
 }
 
-export { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcFinanceDefaults };
+export { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcFinanceDefaults, toFiniteOrNull };
