@@ -58,7 +58,7 @@ export default {
                             <th style="min-width:140px">库存天数</th>
                             <th style="min-width:140px">利润率%</th>
                             <th style="min-width:160px">亏损额度(7D)</th>
-                            <th style="min-width:160px">ACOS上限</th>
+                            <th style="min-width:160px">预算上限</th>
                             <th style="min-width:200px">操作</th>
                         </tr>
                     </thead>
@@ -78,7 +78,7 @@ export default {
                             <td :style="invStyle(sp)">{{ fmtVal(sp.inventory_days) }}</td>
                             <td>{{ fmtVal(sp.profit_margin) }}</td>
                             <td>{{ fmtVal(sp.max_loss_7d) }}</td>
-                            <td>{{ fmtVal(sp.acos_limit) }}</td>
+                            <td>{{ fmtVal(sp.budget_cap) }}</td>
                             <td>
                                 <a class="btn-sm" :href="'/sprints/' + sp.id">编辑</a>
                                 <a class="btn-sm" :href="'/reviews?sprint_id=' + sp.id">周复盘</a>
