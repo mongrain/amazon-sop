@@ -118,7 +118,7 @@ function getPageApiCtx() {
         parseYmd,
         addDays,
         normalizeMonitorImageUrl,
-        resetDesignUserCache: () => { cachedDefaultDesignUserId = null; }
+        resetDesignUserCache: () => {}
     };
 }
 
@@ -151,28 +151,6 @@ const upload = multer({
         } else {
             cb(new Error('只支持图片格式 (jpg, png, gif, webp, bmp)'));
         }
-    }
-});
-
-const fileUpload = multer({
-    storage,
-    limits: { fileSize: 15 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const ok =
-            /^image\//.test(file.mimetype) ||
-            /^video\//.test(file.mimetype) ||
-            [
-                'application/pdf',
-                'application/zip',
-                'application/x-zip-compressed',
-                'text/plain',
-                'application/vnd.ms-excel',
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'application/msword',
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            ].includes(file.mimetype);
-        if (ok) cb(null, true);
-        else cb(new Error('不支持的文件类型'));
     }
 });
 
@@ -264,47 +242,11 @@ async function setSetting(key, value) {
     );
 }
 
-let cachedDefaultDesignUserId = null;
-async function getDefaultDesignUserId() {
-    if (cachedDefaultDesignUserId !== null) return cachedDefaultDesignUserId;
-    const row = await queryOne("SELECT id FROM users WHERE role = 'DESIGN' ORDER BY id ASC LIMIT 1");
-    cachedDefaultDesignUserId = row ? row.id : null;
-    return cachedDefaultDesignUserId;
-}
-
 async function ensureWeeklyReviewsForActiveSprints(weekStartStr) {
     await runSql(
         `INSERT IGNORE INTO weekly_reviews (sprint_id, week_start_date, status)
          SELECT id, ?, 'PENDING' FROM sprint_projects WHERE status = 'ACTIVE'`,
         [weekStartStr]
-    );
-}
-
-async function ticketExists(asin, ticketType, dateStr) {
-    const row = await queryOne(
-        'SELECT id FROM issue_tickets WHERE asin = ? AND ticket_type = ? AND DATE(created_at) = ? LIMIT 1',
-        [asin, ticketType, dateStr]
-    );
-    return !!row;
-}
-
-async function createTicket(payload) {
-    const {
-        sprint_id,
-        asin,
-        ticket_type,
-        severity = 'B',
-        owner_id = null,
-        co_owner_id = null,
-        status = 'TODO',
-        sla_deadline = null,
-        trigger_reason = null
-    } = payload;
-    await runSql(
-        `INSERT INTO issue_tickets
-         (sprint_id, asin, ticket_type, severity, owner_id, co_owner_id, status, sla_deadline, trigger_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [sprint_id, asin, ticket_type, severity, owner_id, co_owner_id, status, sla_deadline, trigger_reason]
     );
 }
 
@@ -336,40 +278,6 @@ async function runPostIngestionRules(asins, recordDateStr) {
                  ORDER BY record_date ASC`,
                 [asin, startStr, recordDateStr]
             );
-            const adSpend7d = rows.reduce((sum, r) => sum + Number(r.ad_spend || 0), 0);
-            const totalSales7d = rows.reduce((sum, r) => sum + Number(r.total_sales || 0), 0);
-            const profitMargin = sprint.profit_margin === null ? null : Number(sprint.profit_margin);
-            const maxLoss7d = sprint.max_loss_7d === null ? null : Number(sprint.max_loss_7d);
-            if (profitMargin !== null && maxLoss7d !== null) {
-                const estProfit = totalSales7d * profitMargin / 100;
-                const loss = adSpend7d - estProfit;
-                if (loss > maxLoss7d) {
-                    const exists = await queryOne(
-                        `SELECT id FROM issue_tickets
-                         WHERE asin = ? AND ticket_type = 'EXIT_EVAL'
-                           AND status IN ('TODO','PENDING_DESIGN','WAITING_VERIFY')
-                           AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-                         LIMIT 1`,
-                        [asin]
-                    );
-                    if (!exists) {
-                        const reason = `近7天广告花费=${adSpend7d.toFixed(2)}, 预估利润=${estProfit.toFixed(2)}, 差额=${loss.toFixed(2)}, 7天止损线=${maxLoss7d.toFixed(2)}`;
-                        const deadline = new Date();
-                        deadline.setDate(deadline.getDate() + 1);
-                        await createTicket({
-                            sprint_id: sprint.id,
-                            asin,
-                            ticket_type: 'EXIT_EVAL',
-                            severity: 'S',
-                            owner_id: sprint.owner_id || null,
-                            co_owner_id: null,
-                            status: 'TODO',
-                            sla_deadline: deadline.toISOString().slice(0, 19).replace('T', ' '),
-                            trigger_reason: reason
-                        });
-                    }
-                }
-            }
 
             const promoLimit = sprint.promo_tacos_limit === null ? null : Number(sprint.promo_tacos_limit);
             if (promoLimit !== null) {
@@ -1481,148 +1389,6 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
     }
 });
 
-app.post('/tickets/:id/design-asset', fileUpload.single('file'), async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        if (!req.file) throw new Error('请上传文件');
-        const url = '/uploads/' + req.file.filename;
-        await runSql(
-            "UPDATE issue_tickets SET design_asset_url = ?, status = 'WAITING_VERIFY', updated_at = NOW() WHERE id = ?",
-            [url, id]
-        );
-        res.json({ status: 'ok' });
-    } catch (e) {
-        res.status(400).json({ error: e.message });
-    }
-});
-
-app.post('/tickets/:id/verify', fileUpload.single('file'), async (req, res) => {
-    try {
-        const id = Number(req.params.id);
-        const result = String(req.body.result || '').trim();
-        const verify_evidence = String(req.body.verify_evidence || '').trim();
-        const verify_file_url = req.file ? '/uploads/' + req.file.filename : null;
-        if (!['RESOLVED', 'FAILED'].includes(result)) throw new Error('验收结果不合法');
-        if (!verify_evidence && !verify_file_url) throw new Error('必须填写验收指标或上传凭证');
-
-        await runSql(
-            `UPDATE issue_tickets SET
-             verify_evidence = ?, verify_file_url = COALESCE(?, verify_file_url),
-             status = ?, resolved_at = NOW(), updated_at = NOW()
-             WHERE id = ?`,
-            [verify_evidence || null, verify_file_url, result, id]
-        );
-        res.json({ status: 'ok' });
-    } catch (e) {
-        res.status(400).json({ error: e.message });
-    }
-});
-
-async function runDailyTicketScan(targetDateStr) {
-    const ctrBenchmark = Number(await getSetting('ctr_benchmark', '0.003'));
-    const cvrBenchmark = Number(await getSetting('cvr_benchmark', '0.08'));
-    const bsrDropThreshold = Number(await getSetting('bsr_drop_threshold', '10'));
-    const designUserId = await getDefaultDesignUserId();
-
-    const rows = await queryAll(
-        `SELECT m.*, sp.id AS sprint_id, sp.owner_id, sp.acos_limit
-         FROM daily_asin_metrics m
-         JOIN sprint_projects sp ON sp.asin = m.asin
-         WHERE m.record_date = ? AND sp.status IN ('ACTIVE','MAINTENANCE')`,
-        [targetDateStr]
-    );
-
-    for (const r of rows) {
-        const asin = r.asin;
-        const sprintId = r.sprint_id;
-        const ownerId = r.owner_id || null;
-
-        if (Number(r.impressions || 0) > 1000 && r.ctr !== null && r.ctr !== undefined && Number(r.ctr) < ctrBenchmark) {
-            if (!(await ticketExists(asin, 'CTR_LOW', targetDateStr))) {
-                const deadline = toDateString(addDays(parseYmd(targetDateStr), 3)) + ' 23:59:59';
-                await createTicket({
-                    sprint_id: sprintId,
-                    asin,
-                    ticket_type: 'CTR_LOW',
-                    severity: 'B',
-                    owner_id: ownerId,
-                    co_owner_id: designUserId,
-                    status: 'TODO',
-                    sla_deadline: deadline,
-                    trigger_reason: `曝光=${r.impressions}, CTR=${Number(r.ctr).toFixed(4)} < 标准=${ctrBenchmark}`
-                });
-            }
-        }
-
-        if (Number(r.clicks || 0) > 50 && r.cvr !== null && r.cvr !== undefined && Number(r.cvr) < cvrBenchmark) {
-            if (!(await ticketExists(asin, 'CVR_LOW', targetDateStr))) {
-                const deadline = toDateString(addDays(parseYmd(targetDateStr), 7)) + ' 23:59:59';
-                await createTicket({
-                    sprint_id: sprintId,
-                    asin,
-                    ticket_type: 'CVR_LOW',
-                    severity: 'B',
-                    owner_id: ownerId,
-                    co_owner_id: designUserId,
-                    status: 'TODO',
-                    sla_deadline: deadline,
-                    trigger_reason: `点击=${r.clicks}, CVR=${Number(r.cvr).toFixed(4)} < 标准=${cvrBenchmark}`
-                });
-            }
-        }
-
-        if (r.acos !== null && r.acos !== undefined && r.acos_limit !== null && r.acos_limit !== undefined) {
-            if (Number(r.acos) > Number(r.acos_limit)) {
-                if (!(await ticketExists(asin, 'ACOS_HIGH', targetDateStr))) {
-                    const deadline = targetDateStr + ' 23:59:59';
-                    await createTicket({
-                        sprint_id: sprintId,
-                        asin,
-                        ticket_type: 'ACOS_HIGH',
-                        severity: 'A',
-                        owner_id: ownerId,
-                        co_owner_id: null,
-                        status: 'TODO',
-                        sla_deadline: deadline,
-                        trigger_reason: `昨日ACOS=${Number(r.acos).toFixed(2)}% > 上限=${Number(r.acos_limit).toFixed(2)}%`
-                    });
-                }
-            }
-        }
-
-        if (Number(r.ad_orders || 0) > 3 && r.bsr_rank !== null && r.bsr_rank !== undefined) {
-            const end = addDays(parseYmd(targetDateStr), -1);
-            const start = addDays(end, -6);
-            const avgRow = await queryOne(
-                `SELECT AVG(bsr_rank) AS avg_bsr
-                 FROM daily_asin_metrics
-                 WHERE asin = ? AND record_date BETWEEN ? AND ? AND bsr_rank IS NOT NULL`,
-                [asin, toDateString(start), toDateString(end)]
-            );
-            const avgBsr = avgRow && avgRow.avg_bsr !== null && avgRow.avg_bsr !== undefined ? Number(avgRow.avg_bsr) : null;
-            if (avgBsr !== null) {
-                const drop = Number(r.bsr_rank) - avgBsr;
-                if (drop >= bsrDropThreshold) {
-                    if (!(await ticketExists(asin, 'RANK_DROP', targetDateStr))) {
-                        const deadline = toDateString(addDays(parseYmd(targetDateStr), 7)) + ' 23:59:59';
-                        await createTicket({
-                            sprint_id: sprintId,
-                            asin,
-                            ticket_type: 'RANK_DROP',
-                            severity: 'B',
-                            owner_id: ownerId,
-                            co_owner_id: null,
-                            status: 'TODO',
-                            sla_deadline: deadline,
-                            trigger_reason: `广告单量=${r.ad_orders}, BSR=${r.bsr_rank}, 近7日均值=${avgBsr.toFixed(2)}, 变差=${drop.toFixed(2)} >= 阈值=${bsrDropThreshold}`
-                        });
-                    }
-                }
-            }
-        }
-    }
-}
-
 async function schedulerTick() {
     if (!dbReady) return;
     const now = new Date();
@@ -1631,13 +1397,6 @@ async function schedulerTick() {
     if (currentWeekKey !== weekStartStr) {
         await ensureWeeklyReviewsForActiveSprints(weekStartStr);
         await setSetting('weekly_review_generated_week', weekStartStr);
-    }
-
-    const targetDateStr = toDateString(addDays(now, -1));
-    const lastScan = await getSetting('daily_ticket_scan_date', '');
-    if (lastScan !== targetDateStr && (now.getHours() > 0 || now.getMinutes() >= 10)) {
-        await runDailyTicketScan(targetDateStr);
-        await setSetting('daily_ticket_scan_date', targetDateStr);
     }
 }
 
