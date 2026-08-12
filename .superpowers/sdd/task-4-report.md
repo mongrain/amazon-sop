@@ -86,5 +86,33 @@ Output: `ok` ✓
 ### Commit
 
 ```
-fix: 冲刺查询忽略空利润避免亏损额度为0
+e682459 fix: 冲刺查询忽略空利润避免亏损额度为0
+```
+
+---
+
+## Final Review Fix: 编辑加载不覆盖派生字段 (2026-08-13)
+
+### Problem
+
+`loadForm` 末尾无条件调用 `recalcDerived()`，编辑已有冲刺时会用公式重算覆盖已保存的 `end_date` / `required_impressions` / `budget_cap`。加载期间字段赋值也会触发 watch 产生中间重算。
+
+### Fix
+
+| File | Change |
+|------|--------|
+| `frontend/src/views/SprintFormView.js` | 新增 `hydrating` 标志；加载赋值期间 watch 跳过；移除编辑加载后的 `recalcDerived()`；新建表单（无 `sprintId`）加载默认后仍调用一次 `recalcDerived()` |
+
+### Verification
+
+```powershell
+node --check frontend/src/views/SprintFormView.js
+```
+
+Output: pass ✓
+
+### Commit
+
+```
+fix: 编辑冲刺时加载不覆盖已保存派生字段
 ```

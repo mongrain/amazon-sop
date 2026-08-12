@@ -24,6 +24,7 @@ export default {
         const error = ref('');
         const saving = ref(false);
         const querying = ref(false);
+        const hydrating = ref(false);
         const lastProfitUsd = ref(null);
         const form = reactive({
             asin: '', owner_id: '', status: 'ACTIVE', start_date: '', end_date: '',
@@ -68,34 +69,39 @@ export default {
                 const qs = sprintId.value ? ('?id=' + encodeURIComponent(sprintId.value)) : '';
                 const { data } = await http.get('/api/sprints/form' + qs);
                 users.value = data.users || [];
-                if (data.sprint) {
-                    const s = data.sprint;
-                    form.asin = s.asin || '';
-                    form.owner_id = s.owner_id != null ? String(s.owner_id) : '';
-                    form.status = s.status || 'ACTIVE';
-                    form.start_date = s.start_date || '';
-                    form.end_date = s.end_date || '';
-                    form.target_cycle_days = s.target_cycle_days != null ? s.target_cycle_days : 14;
-                    form.current_daily_orders = s.current_daily_orders != null ? s.current_daily_orders : '';
-                    form.target_daily_orders = s.target_daily_orders != null ? s.target_daily_orders : '';
-                    form.current_rank = s.current_rank != null ? s.current_rank : '';
-                    form.target_rank = s.target_rank != null ? s.target_rank : '';
-                    form.ctr_7d = s.ctr_7d != null ? s.ctr_7d : '';
-                    form.cvr_7d = s.cvr_7d != null ? s.cvr_7d : '';
-                    form.cpc = s.cpc != null ? s.cpc : '';
-                    form.required_impressions = s.required_impressions != null ? s.required_impressions : '';
-                    form.promo_tacos_limit = s.promo_tacos_limit != null ? s.promo_tacos_limit : '';
-                    form.stable_tacos_target = s.stable_tacos_target != null ? s.stable_tacos_target : '';
-                    form.max_loss_7d = s.max_loss_7d != null ? s.max_loss_7d : '';
-                    form.profit_margin = s.profit_margin != null ? s.profit_margin : '';
-                    form.budget_cap = s.budget_cap != null ? s.budget_cap : '';
-                    form.inventory_days = s.inventory_days != null ? s.inventory_days : '';
-                    form.competitor_action = s.competitor_action || '';
-                    form.page_ok = Number(s.page_ok) === 1;
-                    form.exit_conditions = s.exit_conditions || '';
+                hydrating.value = true;
+                try {
+                    if (data.sprint) {
+                        const s = data.sprint;
+                        form.asin = s.asin || '';
+                        form.owner_id = s.owner_id != null ? String(s.owner_id) : '';
+                        form.status = s.status || 'ACTIVE';
+                        form.start_date = s.start_date || '';
+                        form.end_date = s.end_date || '';
+                        form.target_cycle_days = s.target_cycle_days != null ? s.target_cycle_days : 14;
+                        form.current_daily_orders = s.current_daily_orders != null ? s.current_daily_orders : '';
+                        form.target_daily_orders = s.target_daily_orders != null ? s.target_daily_orders : '';
+                        form.current_rank = s.current_rank != null ? s.current_rank : '';
+                        form.target_rank = s.target_rank != null ? s.target_rank : '';
+                        form.ctr_7d = s.ctr_7d != null ? s.ctr_7d : '';
+                        form.cvr_7d = s.cvr_7d != null ? s.cvr_7d : '';
+                        form.cpc = s.cpc != null ? s.cpc : '';
+                        form.required_impressions = s.required_impressions != null ? s.required_impressions : '';
+                        form.promo_tacos_limit = s.promo_tacos_limit != null ? s.promo_tacos_limit : '';
+                        form.stable_tacos_target = s.stable_tacos_target != null ? s.stable_tacos_target : '';
+                        form.max_loss_7d = s.max_loss_7d != null ? s.max_loss_7d : '';
+                        form.profit_margin = s.profit_margin != null ? s.profit_margin : '';
+                        form.budget_cap = s.budget_cap != null ? s.budget_cap : '';
+                        form.inventory_days = s.inventory_days != null ? s.inventory_days : '';
+                        form.competitor_action = s.competitor_action || '';
+                        form.page_ok = Number(s.page_ok) === 1;
+                        form.exit_conditions = s.exit_conditions || '';
+                    }
+                } finally {
+                    hydrating.value = false;
                 }
                 error.value = data.error || '';
-                recalcDerived();
+                if (!sprintId.value) recalcDerived();
             } catch (e) {
                 error.value = getApiError(e, '加载失败');
             }
@@ -154,6 +160,7 @@ export default {
         watch(
             () => [form.start_date, form.target_cycle_days],
             () => {
+                if (hydrating.value) return;
                 const end = calcEndDate(form.start_date, form.target_cycle_days);
                 if (end) form.end_date = end;
             }
@@ -162,6 +169,7 @@ export default {
         watch(
             () => [form.target_daily_orders, form.ctr_7d, form.cvr_7d],
             () => {
+                if (hydrating.value) return;
                 const impressions = calcRequiredImpressions(
                     form.target_daily_orders,
                     form.ctr_7d,
@@ -176,6 +184,7 @@ export default {
         watch(
             () => [form.required_impressions, form.cpc],
             () => {
+                if (hydrating.value) return;
                 const cap = calcBudgetCap(form.required_impressions, form.cpc);
                 if (cap != null) form.budget_cap = cap;
             }
@@ -184,6 +193,7 @@ export default {
         watch(
             () => form.current_daily_orders,
             () => {
+                if (hydrating.value) return;
                 recalcMaxLossFromOrders();
             }
         );
