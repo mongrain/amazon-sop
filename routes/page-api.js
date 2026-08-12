@@ -630,8 +630,8 @@ function registerProtectedPageApi(app, ctx) {
             target_cycle_days,
             numOrNull(body.current_daily_orders),
             numOrNull(body.target_daily_orders),
-            intOrNull(body.current_rank),
-            intOrNull(body.target_rank),
+            String(body.current_rank || '').trim() || null,
+            String(body.target_rank || '').trim() || null,
             numOrNull(body.promo_tacos_limit),
             numOrNull(body.stable_tacos_target),
             numOrNull(body.max_loss_7d),
@@ -640,7 +640,12 @@ function registerProtectedPageApi(app, ctx) {
             body.page_ok ? 1 : 0,
             String(body.exit_conditions || '').trim() || null,
             numOrNull(body.profit_margin),
-            numOrNull(body.acos_limit)
+            null,
+            numOrNull(body.ctr_7d),
+            numOrNull(body.cvr_7d),
+            numOrNull(body.cpc),
+            numOrNull(body.required_impressions),
+            numOrNull(body.budget_cap)
         ];
 
         if (id) {
@@ -650,6 +655,7 @@ function registerProtectedPageApi(app, ctx) {
                  current_daily_orders = ?, target_daily_orders = ?, current_rank = ?, target_rank = ?,
                  promo_tacos_limit = ?, stable_tacos_target = ?, max_loss_7d = ?, inventory_days = ?,
                  competitor_action = ?, page_ok = ?, exit_conditions = ?, profit_margin = ?, acos_limit = ?,
+                 ctr_7d = ?, cvr_7d = ?, cpc = ?, required_impressions = ?, budget_cap = ?,
                  updated_at = NOW()
                  WHERE id = ?`,
                 [asin, ...values, id]
@@ -660,8 +666,9 @@ function registerProtectedPageApi(app, ctx) {
                  (asin, owner_id, status, start_date, end_date, target_cycle_days,
                   current_daily_orders, target_daily_orders, current_rank, target_rank,
                   promo_tacos_limit, stable_tacos_target, max_loss_7d, inventory_days,
-                  competitor_action, page_ok, exit_conditions, profit_margin, acos_limit)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  competitor_action, page_ok, exit_conditions, profit_margin, acos_limit,
+                  ctr_7d, cvr_7d, cpc, required_impressions, budget_cap)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [asin, ...values]
             );
         }
