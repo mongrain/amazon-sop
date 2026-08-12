@@ -248,7 +248,8 @@ async function initDb() {
             cvr_7d DECIMAL(10,4) DEFAULT NULL COMMENT '7日日均CVR(%)',
             cpc DECIMAL(10,4) DEFAULT NULL COMMENT 'CPC($)',
             required_impressions DECIMAL(14,2) DEFAULT NULL COMMENT '所需曝光',
-            budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算上限($)',
+            required_clicks DECIMAL(14,2) DEFAULT NULL COMMENT '所需点击数',
+            budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算($)',
             sprint_goal VARCHAR(500) DEFAULT NULL,
             sprint_keywords TEXT,
             fba_warehouse_qty DECIMAL(12,2) DEFAULT NULL,
@@ -318,7 +319,15 @@ async function initDb() {
 
     try {
         await p.query(
-            `ALTER TABLE sprint_projects ADD COLUMN budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算上限($)' AFTER required_impressions`
+            `ALTER TABLE sprint_projects ADD COLUMN required_clicks DECIMAL(14,2) DEFAULT NULL COMMENT '所需点击数' AFTER required_impressions`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE sprint_projects ADD COLUMN budget_cap DECIMAL(12,2) DEFAULT NULL COMMENT '预算($)' AFTER required_clicks`
         );
     } catch (e) {
         if (!isSafeMigrationError(e)) {}

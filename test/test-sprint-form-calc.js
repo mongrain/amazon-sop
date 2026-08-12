@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
     calcEndDate,
     calcRequiredImpressions,
+    calcRequiredClicks,
     calcBudgetCap,
     calcInventoryDays,
     calcFinanceDefaults
@@ -11,7 +12,9 @@ assert.strictEqual(calcEndDate('2026-08-01', 14), '2026-08-14');
 assert.strictEqual(calcEndDate('', 14), '');
 assert.strictEqual(calcRequiredImpressions(10, 0.5, 10), 20000); // 10 / (0.005 * 0.1)
 assert.strictEqual(calcRequiredImpressions(10, 0, 10), null);
-assert.strictEqual(calcBudgetCap(20000, 0.5), 10000);
+assert.strictEqual(calcRequiredClicks(20000, 0.5), 100); // 20000 * 0.005
+assert.strictEqual(calcRequiredClicks(20000, 0), null);
+assert.strictEqual(calcBudgetCap(100, 0.5), 50); // clicks * cpc
 assert.strictEqual(calcInventoryDays(140, 10), 14);
 assert.strictEqual(calcInventoryDays(100, 7), 14);
 assert.strictEqual(calcInventoryDays(100, 0), null);

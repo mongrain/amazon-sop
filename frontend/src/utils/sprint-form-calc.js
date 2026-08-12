@@ -18,11 +18,19 @@ function calcRequiredImpressions(targetDailyOrders, ctrPct, cvrPct) {
     return Math.round((orders / (ctr * cvr)) * 100) / 100;
 }
 
-function calcBudgetCap(requiredImpressions, cpc) {
+function calcRequiredClicks(requiredImpressions, ctrPct) {
     const imp = Number(requiredImpressions);
+    const ctr = Number(ctrPct) / 100;
+    if (![imp, ctr].every(Number.isFinite) || imp < 0 || ctr <= 0) return null;
+    return Math.round((imp * ctr) * 100) / 100;
+}
+
+/** 预算 = 所需点击数 × CPC */
+function calcBudgetCap(requiredClicks, cpc) {
+    const clicks = Number(requiredClicks);
     const p = Number(cpc);
-    if (![imp, p].every(Number.isFinite) || imp < 0 || p < 0) return null;
-    return Math.round(imp * p * 100) / 100;
+    if (![clicks, p].every(Number.isFinite) || clicks < 0 || p < 0) return null;
+    return Math.round(clicks * p * 100) / 100;
 }
 
 function toFiniteOrNull(v) {
@@ -56,7 +64,23 @@ function calcFinanceDefaults({ profitMarginRatio, profitUsd, currentDailyOrders 
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcInventoryDays, calcFinanceDefaults, toFiniteOrNull };
+    module.exports = {
+        calcEndDate,
+        calcRequiredImpressions,
+        calcRequiredClicks,
+        calcBudgetCap,
+        calcInventoryDays,
+        calcFinanceDefaults,
+        toFiniteOrNull
+    };
 }
 
-export { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcInventoryDays, calcFinanceDefaults, toFiniteOrNull };
+export {
+    calcEndDate,
+    calcRequiredImpressions,
+    calcRequiredClicks,
+    calcBudgetCap,
+    calcInventoryDays,
+    calcFinanceDefaults,
+    toFiniteOrNull
+};

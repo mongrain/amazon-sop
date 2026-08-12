@@ -4,6 +4,7 @@ import { getApiError, http } from '@/utils/index.js';
 import {
     calcEndDate,
     calcRequiredImpressions,
+    calcRequiredClicks,
     calcBudgetCap,
     calcInventoryDays,
     calcFinanceDefaults,
@@ -32,7 +33,7 @@ export default {
             target_cycle_days: 14, current_daily_orders: '', target_daily_orders: '',
             current_rank: '', target_rank: '',
             sprint_goal: '', sprint_keywords: '',
-            ctr_7d: '', cvr_7d: '', cpc: '', required_impressions: '',
+            ctr_7d: '', cvr_7d: '', cpc: '', required_impressions: '', required_clicks: '',
             promo_tacos_limit: '', stable_tacos_target: '',
             max_loss_7d: '', profit_margin: '', budget_cap: '',
             fba_warehouse_qty: '', inventory_days: '',
@@ -53,7 +54,10 @@ export default {
             );
             if (impressions != null) form.required_impressions = impressions;
 
-            const cap = calcBudgetCap(form.required_impressions, form.cpc);
+            const clicks = calcRequiredClicks(form.required_impressions, form.ctr_7d);
+            if (clicks != null) form.required_clicks = clicks;
+
+            const cap = calcBudgetCap(form.required_clicks, form.cpc);
             if (cap != null) form.budget_cap = cap;
         }
 
@@ -92,6 +96,7 @@ export default {
                         form.cvr_7d = s.cvr_7d != null ? s.cvr_7d : '';
                         form.cpc = s.cpc != null ? s.cpc : '';
                         form.required_impressions = s.required_impressions != null ? s.required_impressions : '';
+                        form.required_clicks = s.required_clicks != null ? s.required_clicks : '';
                         form.promo_tacos_limit = s.promo_tacos_limit != null ? s.promo_tacos_limit : '';
                         form.stable_tacos_target = s.stable_tacos_target != null ? s.stable_tacos_target : '';
                         form.max_loss_7d = s.max_loss_7d != null ? s.max_loss_7d : '';
@@ -182,16 +187,23 @@ export default {
                     form.cvr_7d
                 );
                 if (impressions != null) form.required_impressions = impressions;
-                const cap = calcBudgetCap(form.required_impressions, form.cpc);
-                if (cap != null) form.budget_cap = cap;
             }
         );
 
         watch(
-            () => [form.required_impressions, form.cpc],
+            () => [form.required_impressions, form.ctr_7d],
             () => {
                 if (hydrating.value) return;
-                const cap = calcBudgetCap(form.required_impressions, form.cpc);
+                const clicks = calcRequiredClicks(form.required_impressions, form.ctr_7d);
+                if (clicks != null) form.required_clicks = clicks;
+            }
+        );
+
+        watch(
+            () => [form.required_clicks, form.cpc],
+            () => {
+                if (hydrating.value) return;
+                const cap = calcBudgetCap(form.required_clicks, form.cpc);
                 if (cap != null) form.budget_cap = cap;
             }
         );
@@ -317,6 +329,10 @@ export default {
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">所需曝光</div>
                                 <input v-model="form.required_impressions" class="search-input" style="width:100%;" type="number" min="0" step="any">
                             </div>
+                            <div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">所需点击数</div>
+                                <input v-model="form.required_clicks" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -342,7 +358,7 @@ export default {
                                 <input v-model="form.profit_margin" class="search-input" style="width:100%;" type="number" step="0.01" min="0">
                             </div>
                             <div>
-                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">预算上限($)</div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">预算($)</div>
                                 <input v-model="form.budget_cap" class="search-input" style="width:100%;" type="number" step="0.01" min="0">
                             </div>
                         </div>

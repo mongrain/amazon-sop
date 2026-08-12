@@ -58,7 +58,7 @@ export default {
                             <th style="min-width:140px">库存天数</th>
                             <th style="min-width:140px">利润率%</th>
                             <th style="min-width:160px">亏损额度(7D)</th>
-                            <th style="min-width:160px">预算上限</th>
+                            <th style="min-width:160px">预算</th>
                             <th style="min-width:200px">操作</th>
                         </tr>
                     </thead>
