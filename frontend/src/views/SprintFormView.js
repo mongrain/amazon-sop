@@ -5,6 +5,7 @@ import {
     calcEndDate,
     calcRequiredImpressions,
     calcBudgetCap,
+    calcInventoryDays,
     calcFinanceDefaults,
     toFiniteOrNull
 } from '@/utils/sprint-form-calc.js';
@@ -30,10 +31,12 @@ export default {
             asin: '', owner_id: '', status: 'ACTIVE', start_date: '', end_date: '',
             target_cycle_days: 14, current_daily_orders: '', target_daily_orders: '',
             current_rank: '', target_rank: '',
+            sprint_goal: '', sprint_keywords: '',
             ctr_7d: '', cvr_7d: '', cpc: '', required_impressions: '',
             promo_tacos_limit: '', stable_tacos_target: '',
-            max_loss_7d: '', profit_margin: '', budget_cap: '', inventory_days: '',
-            competitor_action: '', page_ok: false, exit_conditions: ''
+            max_loss_7d: '', profit_margin: '', budget_cap: '',
+            fba_warehouse_qty: '', inventory_days: '',
+            page_ok: false, exit_conditions: ''
         });
 
         const isEdit = computed(() => !!sprintId.value);
@@ -83,6 +86,8 @@ export default {
                         form.target_daily_orders = s.target_daily_orders != null ? s.target_daily_orders : '';
                         form.current_rank = s.current_rank != null ? s.current_rank : '';
                         form.target_rank = s.target_rank != null ? s.target_rank : '';
+                        form.sprint_goal = s.sprint_goal || '';
+                        form.sprint_keywords = s.sprint_keywords || '';
                         form.ctr_7d = s.ctr_7d != null ? s.ctr_7d : '';
                         form.cvr_7d = s.cvr_7d != null ? s.cvr_7d : '';
                         form.cpc = s.cpc != null ? s.cpc : '';
@@ -92,8 +97,8 @@ export default {
                         form.max_loss_7d = s.max_loss_7d != null ? s.max_loss_7d : '';
                         form.profit_margin = s.profit_margin != null ? s.profit_margin : '';
                         form.budget_cap = s.budget_cap != null ? s.budget_cap : '';
+                        form.fba_warehouse_qty = s.fba_warehouse_qty != null ? s.fba_warehouse_qty : '';
                         form.inventory_days = s.inventory_days != null ? s.inventory_days : '';
-                        form.competitor_action = s.competitor_action || '';
                         form.page_ok = Number(s.page_ok) === 1;
                         form.exit_conditions = s.exit_conditions || '';
                     }
@@ -198,6 +203,15 @@ export default {
             }
         );
 
+        watch(
+            () => [form.fba_warehouse_qty, form.current_daily_orders],
+            () => {
+                if (hydrating.value) return;
+                const days = calcInventoryDays(form.fba_warehouse_qty, form.current_daily_orders);
+                if (days != null) form.inventory_days = days;
+            }
+        );
+
         onMounted(loadForm);
 
         return {
@@ -278,26 +292,29 @@ export default {
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">目标排名</div>
                                 <input v-model="form.target_rank" class="search-input" style="width:100%;" type="text" placeholder="请输入小类排名xx名, 大类排名xx名">
                             </div>
-                        </div>
-                        <div style="margin-top:16px; padding-top:12px; border-top:1px solid #ebeef5;">
-                            <div style="font-size:14px; font-weight:600; color:#303133; margin-bottom:12px;">冲刺目标</div>
-                            <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px;">
-                                <div>
-                                    <div style="font-size:13px; color:#606266; margin-bottom:6px;">7日日均CTR(%)</div>
-                                    <input v-model="form.ctr_7d" class="search-input" style="width:100%;" type="number" min="0" step="any">
-                                </div>
-                                <div>
-                                    <div style="font-size:13px; color:#606266; margin-bottom:6px;">7日日均CVR(%)</div>
-                                    <input v-model="form.cvr_7d" class="search-input" style="width:100%;" type="number" min="0" step="any">
-                                </div>
-                                <div>
-                                    <div style="font-size:13px; color:#606266; margin-bottom:6px;">CPC($)</div>
-                                    <input v-model="form.cpc" class="search-input" style="width:100%;" type="number" min="0" step="any">
-                                </div>
-                                <div>
-                                    <div style="font-size:13px; color:#606266; margin-bottom:6px;">所需曝光</div>
-                                    <input v-model="form.required_impressions" class="search-input" style="width:100%;" type="number" min="0" step="any">
-                                </div>
+                            <div style="grid-column: span 4;">
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">冲刺目标</div>
+                                <input v-model="form.sprint_goal" class="search-input" style="width:100%;" type="text" maxlength="500">
+                            </div>
+                            <div style="grid-column: span 4;">
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">冲刺关键词</div>
+                                <textarea v-model="form.sprint_keywords" class="sop-remark" rows="3" placeholder="一行一个或逗号分隔"></textarea>
+                            </div>
+                            <div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">7日日均CTR(%)</div>
+                                <input v-model="form.ctr_7d" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                            </div>
+                            <div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">7日日均CVR(%)</div>
+                                <input v-model="form.cvr_7d" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                            </div>
+                            <div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">CPC($)</div>
+                                <input v-model="form.cpc" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                            </div>
+                            <div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">所需曝光</div>
+                                <input v-model="form.required_impressions" class="search-input" style="width:100%;" type="number" min="0" step="any">
                             </div>
                         </div>
                     </div>
@@ -336,15 +353,15 @@ export default {
                     <div class="module-body">
                         <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px;">
                             <div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">FBA仓库数量</div>
+                                <input v-model="form.fba_warehouse_qty" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                            </div>
+                            <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">库存可支撑天数</div>
-                                <input v-model="form.inventory_days" class="search-input" style="width:100%;" type="number" min="0">
+                                <input v-model="form.inventory_days" class="search-input" style="width:100%;" type="number" min="0" step="any">
                                 <div style="font-size:12px; color:#909399; margin-top:4px;">低于 30 天会在列表标黄预警</div>
                             </div>
-                            <div style="grid-column: span 2;">
-                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">竞品当前动作</div>
-                                <input v-model="form.competitor_action" class="search-input" style="width:100%;">
-                            </div>
-                            <div style="grid-column: span 3; display:flex; align-items:center; gap:8px; padding-top:4px;">
+                            <div style="display:flex; align-items:center; gap:8px; padding-top:22px;">
                                 <input v-model="form.page_ok" type="checkbox" :true-value="true" :false-value="false">
                                 <span style="font-size:14px;">页面是否达标</span>
                             </div>
