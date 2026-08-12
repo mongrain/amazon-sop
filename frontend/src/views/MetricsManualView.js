@@ -93,9 +93,8 @@ export default {
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                     <div>
                         <h1>每日数据填报</h1>
-                        <div class="page-desc">提交后会触发规则诊断与工单生成</div>
+                        <div class="page-desc">提交后会触发规则诊断</div>
                     </div>
-                    <router-link class="btn-sm" to="/tickets">查看工单看板</router-link>
                 </div>
             </div>
 

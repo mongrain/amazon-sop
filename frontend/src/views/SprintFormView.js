@@ -25,7 +25,7 @@ export default {
         });
 
         const isEdit = computed(() => !!sprintId.value);
-        const pageTitle = computed(() => isEdit.value ? '编辑冲刺项目' : '新建冲刺项目');
+        const pageTitle = computed(() => isEdit.value ? '编辑冲刺广告' : '新建冲刺广告');
 
         async function loadForm() {
             try {
@@ -82,7 +82,7 @@ export default {
 
         return { sprintId, users, error, saving, form, isEdit, pageTitle, submitForm };
     },
-    template: `<router-link to="/sprints" class="back-link">← 返回冲刺项目</router-link>
+    template: `<router-link to="/sprints" class="back-link">← 返回冲刺广告</router-link>
             <div class="page-header">
                 <h1>{{ pageTitle }}</h1>
                 <div class="page-desc">字段校验严格，ASIN 唯一</div>

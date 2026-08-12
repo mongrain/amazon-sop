@@ -46,7 +46,7 @@ export default {
 
         return { reviews, sprints, filters, loading, onFilterChange, fmtVal };
     },
-    template: `<router-link to="/sprints" class="back-link">← 返回冲刺项目</router-link>
+    template: `<router-link to="/sprints" class="back-link">← 返回冲刺广告</router-link>
             <div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                     <div>
@@ -97,7 +97,6 @@ export default {
                             <td>{{ r.decision || '-' }}</td>
                             <td>
                                 <a class="btn-sm" :href="'/reviews/' + r.id">填写/查看</a>
-                                <a class="btn-sm" :href="'/tickets?asin=' + encodeURIComponent(r.asin)">查看工单</a>
                             </td>
                         </tr>
                     </tbody>

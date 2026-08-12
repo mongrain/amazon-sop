@@ -40,10 +40,10 @@ export default {
     template: `<div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                     <div>
-                        <h1>冲刺项目</h1>
-                        <div class="page-desc">立项 -> 数据追踪 -> 规则诊断 -> 工单流转 -> 举证验收</div>
+                        <h1>冲刺广告</h1>
+                        <div class="page-desc">立项 -> 数据追踪 -> 规则诊断 -> 周复盘</div>
                     </div>
-                    <router-link class="btn-primary" to="/sprints/new">+ 新建冲刺项目</router-link>
+                    <router-link class="btn-primary" to="/sprints/new">+ 新建冲刺广告</router-link>
                 </div>
             </div>
             <div class="table-container">
@@ -67,7 +67,7 @@ export default {
                             <td colspan="10" style="text-align:center; padding:40px; color:#999;">加载中…</td>
                         </tr>
                         <tr v-else-if="!sprints.length">
-                            <td colspan="10" style="text-align:center; padding:40px; color:#999;">暂无冲刺项目</td>
+                            <td colspan="10" style="text-align:center; padding:40px; color:#999;">暂无冲刺广告</td>
                         </tr>
                         <tr v-for="sp in sprints" :key="sp.id">
                             <td>{{ sp.id }}</td>
@@ -81,7 +81,6 @@ export default {
                             <td>{{ fmtVal(sp.acos_limit) }}</td>
                             <td>
                                 <a class="btn-sm" :href="'/sprints/' + sp.id">编辑</a>
-                                <a class="btn-sm" :href="'/tickets?asin=' + encodeURIComponent(sp.asin)">查看工单</a>
                                 <a class="btn-sm" :href="'/reviews?sprint_id=' + sp.id">周复盘</a>
                             </td>
                         </tr>
