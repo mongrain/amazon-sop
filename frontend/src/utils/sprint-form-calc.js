@@ -35,7 +35,7 @@ function calcInventoryDays(fbaQty, currentDailyOrders) {
     const qty = toFiniteOrNull(fbaQty);
     const orders = toFiniteOrNull(currentDailyOrders);
     if (qty == null || orders == null || orders <= 0 || qty < 0) return null;
-    return Math.round((qty / orders) * 100) / 100;
+    return Math.round(qty / orders);
 }
 
 function calcFinanceDefaults({ profitMarginRatio, profitUsd, currentDailyOrders }) {

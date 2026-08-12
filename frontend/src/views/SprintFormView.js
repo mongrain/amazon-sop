@@ -1,4 +1,4 @@
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { getApiError, http } from '@/utils/index.js';
 import {
@@ -102,6 +102,7 @@ export default {
                         form.page_ok = Number(s.page_ok) === 1;
                         form.exit_conditions = s.exit_conditions || '';
                     }
+                    await nextTick();
                 } finally {
                     hydrating.value = false;
                 }
@@ -358,7 +359,7 @@ export default {
                             </div>
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">库存可支撑天数</div>
-                                <input v-model="form.inventory_days" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                                <input v-model="form.inventory_days" class="search-input" style="width:100%;" type="number" min="0" step="1">
                                 <div style="font-size:12px; color:#909399; margin-top:4px;">低于 30 天会在列表标黄预警</div>
                             </div>
                             <div style="display:flex; align-items:center; gap:8px; padding-top:22px;">

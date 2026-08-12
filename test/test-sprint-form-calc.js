@@ -13,6 +13,7 @@ assert.strictEqual(calcRequiredImpressions(10, 0.5, 10), 20000); // 10 / (0.005 
 assert.strictEqual(calcRequiredImpressions(10, 0, 10), null);
 assert.strictEqual(calcBudgetCap(20000, 0.5), 10000);
 assert.strictEqual(calcInventoryDays(140, 10), 14);
+assert.strictEqual(calcInventoryDays(100, 7), 14);
 assert.strictEqual(calcInventoryDays(100, 0), null);
 assert.strictEqual(calcInventoryDays(null, 10), null);
 assert.deepStrictEqual(
