@@ -31,6 +31,13 @@ function toFiniteOrNull(v) {
     return Number.isFinite(n) ? n : null;
 }
 
+function calcInventoryDays(fbaQty, currentDailyOrders) {
+    const qty = toFiniteOrNull(fbaQty);
+    const orders = toFiniteOrNull(currentDailyOrders);
+    if (qty == null || orders == null || orders <= 0 || qty < 0) return null;
+    return Math.round((qty / orders) * 100) / 100;
+}
+
 function calcFinanceDefaults({ profitMarginRatio, profitUsd, currentDailyOrders }) {
     const ratio = toFiniteOrNull(profitMarginRatio);
     const marginPct = ratio == null ? null : Math.round(ratio * 10000) / 100;
@@ -49,7 +56,7 @@ function calcFinanceDefaults({ profitMarginRatio, profitUsd, currentDailyOrders 
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcFinanceDefaults, toFiniteOrNull };
+    module.exports = { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcInventoryDays, calcFinanceDefaults, toFiniteOrNull };
 }
 
-export { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcFinanceDefaults, toFiniteOrNull };
+export { calcEndDate, calcRequiredImpressions, calcBudgetCap, calcInventoryDays, calcFinanceDefaults, toFiniteOrNull };

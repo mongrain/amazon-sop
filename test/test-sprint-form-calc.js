@@ -3,6 +3,7 @@ const {
     calcEndDate,
     calcRequiredImpressions,
     calcBudgetCap,
+    calcInventoryDays,
     calcFinanceDefaults
 } = require('../frontend/src/utils/sprint-form-calc.js');
 
@@ -11,6 +12,9 @@ assert.strictEqual(calcEndDate('', 14), '');
 assert.strictEqual(calcRequiredImpressions(10, 0.5, 10), 20000); // 10 / (0.005 * 0.1)
 assert.strictEqual(calcRequiredImpressions(10, 0, 10), null);
 assert.strictEqual(calcBudgetCap(20000, 0.5), 10000);
+assert.strictEqual(calcInventoryDays(140, 10), 14);
+assert.strictEqual(calcInventoryDays(100, 0), null);
+assert.strictEqual(calcInventoryDays(null, 10), null);
 assert.deepStrictEqual(
     calcFinanceDefaults({ profitMarginRatio: 0.25, profitUsd: 2, currentDailyOrders: 5 }),
     { profit_margin_pct: 25, promo_tacos_limit: 25, stable_tacos_target: 15, max_loss_7d: 70 }
