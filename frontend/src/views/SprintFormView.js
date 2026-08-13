@@ -126,25 +126,44 @@ export default {
             }
             querying.value = true;
             error.value = '';
+            const notes = [];
             try {
-                const { data } = await http.get('/api/product/' + encodeURIComponent(asin));
-                const c = data.economics && data.economics.computed;
-                if (!c) {
-                    error.value = '无产品经济数据';
-                    return;
+                const productP = http.get('/api/product/' + encodeURIComponent(asin));
+                const lxP = http.get('/api/sprints/lingxing-lookup', { params: { asin } });
+                const [productRes, lxRes] = await Promise.allSettled([productP, lxP]);
+
+                if (productRes.status === 'fulfilled') {
+                    const data = productRes.value.data;
+                    const c = data.economics && data.economics.computed;
+                    if (!c) {
+                        notes.push('无产品经济数据');
+                    } else {
+                        lastProfitUsd.value = toFiniteOrNull(c.profit_usd);
+                        const d = calcFinanceDefaults({
+                            profitMarginRatio: c.profit_margin,
+                            profitUsd: c.profit_usd,
+                            currentDailyOrders: form.current_daily_orders
+                        });
+                        if (d.profit_margin_pct != null) form.profit_margin = d.profit_margin_pct;
+                        if (d.promo_tacos_limit != null) form.promo_tacos_limit = d.promo_tacos_limit;
+                        if (d.stable_tacos_target != null) form.stable_tacos_target = d.stable_tacos_target;
+                        if (d.max_loss_7d != null) form.max_loss_7d = d.max_loss_7d;
+                    }
+                } else {
+                    notes.push(getApiError(productRes.reason, '产品查询失败'));
                 }
-                lastProfitUsd.value = toFiniteOrNull(c.profit_usd);
-                const d = calcFinanceDefaults({
-                    profitMarginRatio: c.profit_margin,
-                    profitUsd: c.profit_usd,
-                    currentDailyOrders: form.current_daily_orders
-                });
-                if (d.profit_margin_pct != null) form.profit_margin = d.profit_margin_pct;
-                if (d.promo_tacos_limit != null) form.promo_tacos_limit = d.promo_tacos_limit;
-                if (d.stable_tacos_target != null) form.stable_tacos_target = d.stable_tacos_target;
-                if (d.max_loss_7d != null) form.max_loss_7d = d.max_loss_7d;
-            } catch (e) {
-                error.value = getApiError(e, '查询失败');
+
+                if (lxRes.status === 'fulfilled') {
+                    const lx = lxRes.value.data || {};
+                    const empty = (v) => v === undefined || v === null || String(v).trim() === '';
+                    if (empty(form.fba_warehouse_qty) && lx.fba_warehouse_qty != null) form.fba_warehouse_qty = lx.fba_warehouse_qty;
+                    if (empty(form.ctr_7d) && lx.ctr_7d != null) form.ctr_7d = lx.ctr_7d;
+                    if (empty(form.cvr_7d) && lx.cvr_7d != null) form.cvr_7d = lx.cvr_7d;
+                } else {
+                    notes.push(getApiError(lxRes.reason, '领星查询失败'));
+                }
+
+                error.value = notes.join('；');
             } finally {
                 querying.value = false;
             }

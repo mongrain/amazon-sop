@@ -1,11 +1,41 @@
-import { onMounted, ref } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { onMounted, ref, watch } from 'vue';
 import { getApiError, http } from '@/utils/index.js';
 
 const METRIC_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'core_kw_rank', 'bsr_rank'];
+const PULL_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders'];
 
 function emptyRow(prefillId, asin) {
     return { id: prefillId || '-', asin: asin || '', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '', core_kw_rank: '', bsr_rank: '' };
+}
+
+function rowFromApi(r) {
+    const row = emptyRow(r.id, r.asin);
+    for (const k of METRIC_KEYS) {
+        if (r[k] != null && r[k] !== '') row[k] = r[k];
+    }
+    return row;
+}
+
+function rowHasPulledMetric(row) {
+    return PULL_KEYS.some((k) => String(row[k] ?? '').trim() !== '');
+}
+
+function mergePrefill(rows, prefillRows) {
+    const byAsin = new Map();
+    for (const item of prefillRows || []) {
+        const key = String(item.asin || '').trim().toUpperCase();
+        if (key) byAsin.set(key, item);
+    }
+    return rows.map((row) => {
+        if (rowHasPulledMetric(row)) return row;
+        const prefill = byAsin.get(String(row.asin || '').trim().toUpperCase());
+        if (!prefill) return row;
+        const next = { ...row };
+        for (const k of PULL_KEYS) {
+            if (prefill[k] != null && prefill[k] !== '') next[k] = prefill[k];
+        }
+        return next;
+    });
 }
 
 function parseNum(v) {
@@ -18,22 +48,37 @@ function parseNum(v) {
 export default {
     name: 'MetricsManualView',
     setup() {
-        const router = useRouter();
-        const route = useRoute();
         const recordDate = ref('');
         const rows = ref([emptyRow()]);
         const submitMsg = ref('');
         const resultText = ref('');
         const submitting = ref(false);
+        const pulling = ref(false);
+        const dateReady = ref(false);
 
-        async function loadData() {
+        async function loadData(date) {
             try {
-                const { data } = await http.get('/api/metrics/manual');
-                recordDate.value = data.current_date || '';
-                const prefill = data.prefill || [];
-                rows.value = prefill.length ? prefill.map(r => emptyRow(r.id, r.asin)) : [emptyRow()];
+                const params = date ? { date } : {};
+                const { data } = await http.get('/api/metrics/manual', { params });
+                recordDate.value = data.current_date || date || '';
+                const apiRows = data.rows || [];
+                rows.value = apiRows.length ? apiRows.map(rowFromApi) : [emptyRow()];
             } catch (e) {
                 alert(getApiError(e, '加载失败'));
+            }
+        }
+
+        async function pullLingxing() {
+            if (!recordDate.value) return alert('请选择日期');
+            pulling.value = true;
+            try {
+                const { data } = await http.post('/api/metrics/manual/lingxing-prefill', { date: recordDate.value });
+                rows.value = mergePrefill(rows.value, data.rows || []);
+                submitMsg.value = `已预填 ${data.filled || 0} 行，跳过已录入 ${data.skipped_existing || 0} 行，领星无数据 ${data.missing_in_lingxing || 0} 行`;
+            } catch (e) {
+                alert(getApiError(e, '领星拉取失败'));
+            } finally {
+                pulling.value = false;
             }
         }
 
@@ -85,9 +130,17 @@ export default {
             }
         }
 
-        onMounted(loadData);
+        watch(recordDate, (d) => {
+            if (!dateReady.value || !d) return;
+            loadData(d);
+        });
 
-        return { recordDate, rows, submitMsg, resultText, submitting, addRow, removeRow, submitMetrics };
+        onMounted(async () => {
+            await loadData();
+            dateReady.value = true;
+        });
+
+        return { recordDate, rows, submitMsg, resultText, submitting, pulling, addRow, removeRow, submitMetrics, pullLingxing };
     },
     template: `<div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
@@ -103,7 +156,8 @@ export default {
                 <div class="module-body">
                     <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
                         <input v-model="recordDate" class="search-input" type="date">
-                        <button class="btn-primary" type="button" :disabled="submitting" @click="submitMetrics">提交</button>
+                        <button class="btn-primary" type="button" :disabled="submitting || pulling" @click="submitMetrics">提交</button>
+                        <button class="btn-secondary" type="button" :disabled="submitting || pulling" @click="pullLingxing">{{ pulling ? '拉取中...' : '从领星拉取' }}</button>
                         <button class="btn-secondary" type="button" @click="addRow">+ 添加行</button>
                         <span style="font-size:13px; color:#606266;">{{ submitMsg }}</span>
                     </div>

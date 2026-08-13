@@ -3,6 +3,20 @@ const {
     ensureEconomicsForProduct,
     updateProductEconomics
 } = require('../product-economics');
+const { queryProductPerformanceAll } = require('../service/lingxing-fetch');
+const {
+    METRIC_KEYS,
+    mapPerformanceRow,
+    asinsToPrefill,
+    lookupFromPerformanceRow,
+    last7CompleteDays
+} = require('../service/lingxing-metrics');
+
+function metricOrNull(v) {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
 
 /**
  * Vue 前端：公开路由（登录）
@@ -796,11 +810,116 @@ function registerProtectedPageApi(app, ctx) {
 
     app.get('/api/metrics/manual', async (req, res) => {
         try {
-            const current_date = toDateString(new Date());
-            const prefill = await queryAll("SELECT id, asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE') ORDER BY id DESC");
-            res.json({ current_date, prefill });
+            const dateStr = String(req.query.date || '').trim() || toDateString(new Date());
+            if (!parseYmd(dateStr)) return res.status(400).json({ error: 'date 不合法，需 YYYY-MM-DD' });
+            const sprints = await queryAll(
+                "SELECT id, asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE') ORDER BY id DESC"
+            );
+            const metrics = await queryAll(
+                `SELECT asin, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank
+                 FROM daily_asin_metrics WHERE record_date = ?`,
+                [dateStr]
+            );
+            const byAsin = new Map();
+            for (const row of metrics) {
+                byAsin.set(String(row.asin || '').trim().toUpperCase(), row);
+            }
+            const rows = sprints.map((sprint) => {
+                const saved = byAsin.get(String(sprint.asin || '').trim().toUpperCase()) || {};
+                return {
+                    id: sprint.id,
+                    asin: sprint.asin,
+                    sessions: metricOrNull(saved.sessions),
+                    orders: metricOrNull(saved.orders),
+                    impressions: metricOrNull(saved.impressions),
+                    clicks: metricOrNull(saved.clicks),
+                    ad_spend: metricOrNull(saved.ad_spend),
+                    ad_sales: metricOrNull(saved.ad_sales),
+                    total_sales: metricOrNull(saved.total_sales),
+                    ad_orders: metricOrNull(saved.ad_orders),
+                    core_kw_rank: metricOrNull(saved.core_kw_rank),
+                    bsr_rank: metricOrNull(saved.bsr_rank)
+                };
+            });
+            res.json({ current_date: dateStr, rows });
         } catch (e) {
             res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/metrics/manual/lingxing-prefill', async (req, res) => {
+        try {
+            const dateStr = String(req.body.date || '').trim();
+            if (!parseYmd(dateStr)) return res.status(400).json({ error: 'date 不合法，需 YYYY-MM-DD' });
+            const sprints = await queryAll(
+                "SELECT asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE')"
+            );
+            const sprintAsins = sprints.map((row) => String(row.asin || '').trim()).filter(Boolean);
+            const existing = await queryAll(
+                'SELECT asin FROM daily_asin_metrics WHERE record_date = ?',
+                [dateStr]
+            );
+            const existingAsins = existing.map((row) => String(row.asin || '').trim()).filter(Boolean);
+            const need = asinsToPrefill(sprintAsins, existingAsins);
+            const skipped_existing = sprintAsins.length - need.length;
+            if (need.length === 0) {
+                return res.json({
+                    date: dateStr,
+                    rows: [],
+                    filled: 0,
+                    skipped_existing,
+                    missing_in_lingxing: 0
+                });
+            }
+            const list = await queryProductPerformanceAll({
+                startDate: dateStr,
+                endDate: dateStr,
+                asins: need
+            });
+            const needSet = new Set(need.map((asin) => asin.toUpperCase()));
+            const rows = [];
+            const found = new Set();
+            for (const item of list) {
+                const mapped = mapPerformanceRow(item);
+                const key = String(mapped.asin || '').trim().toUpperCase();
+                if (!key || !needSet.has(key) || found.has(key)) continue;
+                found.add(key);
+                const row = { asin: mapped.asin };
+                for (const keyName of METRIC_KEYS) {
+                    if (mapped[keyName] != null) row[keyName] = mapped[keyName];
+                }
+                rows.push(row);
+            }
+            res.json({
+                date: dateStr,
+                rows,
+                filled: rows.length,
+                skipped_existing,
+                missing_in_lingxing: need.length - rows.length
+            });
+        } catch (e) {
+            const status = e.status === 400 || e.status === 502 ? e.status : 500;
+            res.status(status).json({ error: e.message || '领星拉取失败' });
+        }
+    });
+
+    app.get('/api/sprints/lingxing-lookup', async (req, res) => {
+        try {
+            const asin = String(req.query.asin || '').trim();
+            if (!asin) return res.status(400).json({ error: 'asin 不能为空' });
+            const today = toDateString(new Date());
+            const range = last7CompleteDays(today);
+            const list = await queryProductPerformanceAll({
+                startDate: range.start_date,
+                endDate: range.end_date,
+                asins: [asin]
+            });
+            const match = list.find((item) => String(item.asin || '').trim().toUpperCase() === asin.toUpperCase()) || null;
+            const lookup = lookupFromPerformanceRow(match);
+            res.json({ asin, ...lookup });
+        } catch (e) {
+            const status = e.status === 400 || e.status === 502 ? e.status : 500;
+            res.status(status).json({ error: e.message || '领星查询失败' });
         }
     });
 
