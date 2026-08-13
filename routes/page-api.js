@@ -3,7 +3,7 @@ const {
     ensureEconomicsForProduct,
     updateProductEconomics
 } = require('../product-economics');
-const { queryProductPerformanceAll } = require('../service/lingxing-fetch');
+const { queryProductPerformanceAll, LINGXING_SID_50_US } = require('../service/lingxing-fetch');
 const {
     METRIC_KEYS,
     mapPerformanceRow,
@@ -871,10 +871,12 @@ function registerProtectedPageApi(app, ctx) {
                     missing_in_lingxing: 0
                 });
             }
+            const range = last7CompleteDays(dateStr);
             const list = await queryProductPerformanceAll({
-                startDate: dateStr,
-                endDate: dateStr,
-                asins: need
+                startDate: range.start_date,
+                endDate: range.end_date,
+                asins: need,
+                sids: LINGXING_SID_50_US
             });
             const needSet = new Set(need.map((asin) => asin.toUpperCase()));
             const rows = [];

@@ -1,6 +1,6 @@
 const METRIC_KEYS = [
     'sessions', 'orders', 'impressions', 'clicks',
-    'ad_spend', 'ad_sales', 'total_sales', 'ad_orders'
+    'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'bsr_rank'
 ];
 
 const PERF_FIELD_MAP = {
@@ -11,7 +11,8 @@ const PERF_FIELD_MAP = {
     ad_spend: ['spend', 'ad_cost', 'ad_spend', 'ads_sp_cost'],
     ad_sales: ['ad_sales_amount', 'ad_sales', 'ad_sale_amount'],
     total_sales: ['amount', 'sales_amount', 'sales', 'total_sales'],
-    ad_orders: ['ad_order_quantity', 'ad_order_num', 'ad_orders', 'ad_order_count']
+    ad_orders: ['ad_order_quantity', 'ad_order_num', 'ad_orders', 'ad_order_count'],
+    bsr_rank: ['small_cate_rank', 'cate_rank', 'bsr_rank']
 };
 
 function pickNumeric(row, keys) {
@@ -146,10 +147,10 @@ function extractPerformanceList(payload) {
 
 function pickFbaOnSaleQty(row) {
     const nested = row && row.available_inventory && typeof row.available_inventory === 'object'
-        ? pickNumeric(row.available_inventory, ['afn_fulfillable_quantity'])
+        ? pickNumeric(row.available_inventory, ['total_fulfillable', 'afn_fulfillable_quantity'])
         : null;
     if (nested != null) return nested;
-    return pickNumeric(row, ['afn_fulfillable_quantity', 'fulfillable_quantity']);
+    return pickNumeric(row, ['total_fulfillable', 'afn_fulfillable_quantity', 'fulfillable_quantity']);
 }
 
 function formatCurrentRank(row) {

@@ -30,7 +30,8 @@ const mapped = mapPerformanceRow({
     ad_order_num: 2,
     sessions: 90,
     core_kw_rank: 5,
-    bsr_rank: 10
+    small_cate_rank: 12,
+    cate_rank: 100
 });
 assert.strictEqual(mapped.asin, 'B0ABC');
 assert.strictEqual(mapped.sessions, 90);
@@ -42,7 +43,7 @@ assert.strictEqual(mapped.ad_sales, 80);
 assert.strictEqual(mapped.total_sales, 120.5);
 assert.strictEqual(mapped.ad_orders, 2);
 assert.strictEqual(mapped.core_kw_rank, undefined);
-assert.strictEqual(mapped.bsr_rank, undefined);
+assert.strictEqual(mapped.bsr_rank, 12);
 
 assert.deepStrictEqual(
     asinsToPrefill(['B0A', 'B0B', 'b0c'], ['b0a', 'B0X']),
@@ -55,18 +56,20 @@ assert.strictEqual(rowHasAnyMetric({ asin: 'B0A', ad_spend: 0 }), true);
 
 const merged = mergePrefillIntoRows(
     [
-        { id: 1, asin: 'B0A', sessions: 9, orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '' },
-        { id: 2, asin: 'B0B', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '' }
+        { id: 1, asin: 'B0A', sessions: 9, orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '', bsr_rank: '' },
+        { id: 2, asin: 'B0B', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '', bsr_rank: '' }
     ],
     [
-        { asin: 'B0A', sessions: 100, orders: 2 },
-        { asin: 'B0B', sessions: 50, orders: 1, ad_spend: 3.2 }
+        { asin: 'B0A', sessions: 100, orders: 2, bsr_rank: 8 },
+        { asin: 'B0B', sessions: 50, orders: 1, ad_spend: 3.2, bsr_rank: 12 }
     ]
 );
 assert.strictEqual(merged[0].sessions, 9);
+assert.strictEqual(merged[0].bsr_rank, '');
 assert.strictEqual(merged[1].sessions, 50);
 assert.strictEqual(merged[1].orders, 1);
 assert.strictEqual(merged[1].ad_spend, 3.2);
+assert.strictEqual(merged[1].bsr_rank, 12);
 
 assert.deepStrictEqual(last7CompleteDays('2026-08-13'), {
     start_date: '2026-08-06',
@@ -119,7 +122,8 @@ assert.strictEqual(realMapped.ad_orders, 134);
 
 assert.deepStrictEqual(
     lookupFromPerformanceRow({
-        afn_fulfillable_quantity: 6104,
+        total_fulfillable: 6104,
+        afn_fulfillable_quantity: 999,
         quantity: 14815,
         ctr: '0.0048',
         cvr: '0.2477',

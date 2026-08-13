@@ -2,7 +2,7 @@ import { onMounted, ref, watch } from 'vue';
 import { getApiError, http } from '@/utils/index.js';
 
 const METRIC_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'core_kw_rank', 'bsr_rank'];
-const PULL_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders'];
+const PULL_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'bsr_rank'];
 
 function emptyRow(prefillId, asin) {
     return { id: prefillId || '-', asin: asin || '', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '', core_kw_rank: '', bsr_rank: '' };
@@ -162,7 +162,7 @@ export default {
                         <span style="font-size:13px; color:#606266;">{{ submitMsg }}</span>
                     </div>
                     <div style="font-size:12px; color:#909399; margin-top:8px;">
-                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / 广告订单数(ad_orders) / 核心词排名(core_kw_rank) / BSR排名(bsr_rank)
+                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / 广告订单数(ad_orders) / BSR排名(bsr_rank)
                     </div>
                 </div>
             </div>
@@ -181,7 +181,6 @@ export default {
                             <th style="min-width:110px" title="ad_sales">广告销售额</th>
                             <th style="min-width:110px" title="total_sales">总销售额</th>
                             <th style="min-width:100px" title="ad_orders">广告订单数</th>
-                            <th style="min-width:120px" title="core_kw_rank">核心词排名</th>
                             <th style="min-width:90px" title="bsr_rank">BSR排名</th>
                             <th style="min-width:90px">操作</th>
                         </tr>
@@ -198,7 +197,6 @@ export default {
                             <td><input v-model="row.ad_sales" class="search-input" style="width:110px"></td>
                             <td><input v-model="row.total_sales" class="search-input" style="width:110px"></td>
                             <td><input v-model="row.ad_orders" class="search-input" style="width:100px"></td>
-                            <td><input v-model="row.core_kw_rank" class="search-input" style="width:120px"></td>
                             <td><input v-model="row.bsr_rank" class="search-input" style="width:90px"></td>
                             <td><button class="btn-icon" type="button" @click="removeRow(idx)">删</button></td>
                         </tr>

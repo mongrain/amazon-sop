@@ -1,7 +1,10 @@
 const { callYanjunTool } = require('./yanjun-mcp');
 const { extractPerformanceList } = require('./lingxing-metrics');
 
-async function queryProductPerformance({ startDate, endDate, asins, offset = 0, length = 50, callTool = callYanjunTool }) {
+/** 领星店铺：50宴君北美站-US */
+const LINGXING_SID_50_US = '17438';
+
+async function queryProductPerformance({ startDate, endDate, asins, sids, offset = 0, length = 50, callTool = callYanjunTool }) {
     const args = {
         offset,
         length,
@@ -11,6 +14,7 @@ async function queryProductPerformance({ startDate, endDate, asins, offset = 0, 
         search_field: 'asin',
         summary_field: 'asin'
     };
+    if (sids) args.sids = sids;
     if (Array.isArray(asins) && asins.length) {
         args.search_value = asins;
     }
@@ -18,7 +22,7 @@ async function queryProductPerformance({ startDate, endDate, asins, offset = 0, 
     return extractPerformanceList(payload);
 }
 
-async function queryProductPerformanceAll({ startDate, endDate, asins, callTool = callYanjunTool }) {
+async function queryProductPerformanceAll({ startDate, endDate, asins, sids, callTool = callYanjunTool }) {
     const pageSize = 50;
     const all = [];
     let offset = 0;
@@ -27,6 +31,7 @@ async function queryProductPerformanceAll({ startDate, endDate, asins, callTool 
             startDate,
             endDate,
             asins,
+            sids,
             offset,
             length: pageSize,
             callTool
@@ -39,6 +44,7 @@ async function queryProductPerformanceAll({ startDate, endDate, asins, callTool 
 }
 
 module.exports = {
+    LINGXING_SID_50_US,
     queryProductPerformance,
     queryProductPerformanceAll
 };
