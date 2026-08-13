@@ -1,0 +1,167 @@
+const METRIC_KEYS = [
+    'sessions', 'orders', 'impressions', 'clicks',
+    'ad_spend', 'ad_sales', 'total_sales', 'ad_orders'
+];
+
+const PERF_FIELD_MAP = {
+    sessions: ['sessions', 'session', 'visits', 'session_count'],
+    orders: ['order_items', 'order_num', 'orders', 'volume', 'order_count'],
+    impressions: ['impressions', 'ad_impressions'],
+    clicks: ['clicks', 'ad_clicks'],
+    ad_spend: ['spend', 'ad_cost', 'ad_spend', 'ads_sp_cost'],
+    ad_sales: ['ad_sales_amount', 'ad_sales', 'ad_sale_amount'],
+    total_sales: ['amount', 'sales_amount', 'sales', 'total_sales'],
+    ad_orders: ['ad_order_quantity', 'ad_order_num', 'ad_orders', 'ad_order_count']
+};
+
+function pickNumeric(row, keys) {
+    if (!row || typeof row !== 'object') return null;
+    for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(row, key)) continue;
+        const raw = row[key];
+        if (raw === '' || raw === null || raw === undefined) continue;
+        if (typeof raw === 'string' && raw.trim() === '') continue;
+        const n = Number(raw);
+        if (Number.isFinite(n)) return n;
+    }
+    return null;
+}
+
+function mapPerformanceRow(row) {
+    const asin = String((row && row.asin) || '').trim();
+    const mapped = { asin };
+    for (const metric of METRIC_KEYS) {
+        mapped[metric] = pickNumeric(row, PERF_FIELD_MAP[metric]);
+    }
+    return mapped;
+}
+
+function normalizeAsin(asin) {
+    return String(asin || '').trim().toUpperCase();
+}
+
+function asinsToPrefill(sprintAsins, existingAsins) {
+    const existing = new Set((existingAsins || []).map(normalizeAsin).filter(Boolean));
+    return (sprintAsins || []).filter((asin) => {
+        const key = normalizeAsin(asin);
+        return key && !existing.has(key);
+    });
+}
+
+function rowHasAnyMetric(row) {
+    return METRIC_KEYS.some((key) => {
+        const n = Number(row && row[key]);
+        return row && row[key] !== '' && row[key] !== null && row[key] !== undefined
+            && String(row[key]).trim() !== '' && Number.isFinite(n);
+    });
+}
+
+function mergePrefillIntoRows(rows, prefillRows) {
+    const byAsin = new Map();
+    for (const item of prefillRows || []) {
+        const key = normalizeAsin(item && item.asin);
+        if (key) byAsin.set(key, item);
+    }
+    return (rows || []).map((row) => {
+        if (rowHasAnyMetric(row)) return row;
+        const prefill = byAsin.get(normalizeAsin(row && row.asin));
+        if (!prefill) return row;
+        const next = { ...row };
+        for (const key of METRIC_KEYS) {
+            if (prefill[key] != null && Number.isFinite(Number(prefill[key]))) {
+                next[key] = prefill[key];
+            }
+        }
+        return next;
+    });
+}
+
+function shiftYmd(ymd, days) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '').trim());
+    if (!m) return '';
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    d.setDate(d.getDate() + days);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function last7CompleteDays(todayYmd) {
+    const end_date = shiftYmd(todayYmd, -1);
+    const start_date = shiftYmd(end_date, -6);
+    return { start_date, end_date };
+}
+
+function isEmptyField(v) {
+    if (v === undefined || v === null) return true;
+    return String(v).trim() === '';
+}
+
+function fillEmptySprintFields(form, lookup) {
+    const next = { ...(form || {}) };
+    const src = lookup || {};
+    for (const key of ['fba_warehouse_qty', 'ctr_7d', 'cvr_7d']) {
+        if (isEmptyField(next[key]) && src[key] != null && Number.isFinite(Number(src[key]))) {
+            next[key] = src[key];
+        }
+    }
+    return next;
+}
+
+function toFormPercent(raw) {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    if (Math.abs(n) > 1) return n;
+    return Math.round(n * 100 * 10000) / 10000;
+}
+
+function sumFbaQty(items) {
+    let total = 0;
+    let found = false;
+    for (const item of items || []) {
+        const n = pickNumeric(item, ['afn_fulfillable_quantity', 'fulfillable_quantity', 'quantity']);
+        if (n == null) continue;
+        total += n;
+        found = true;
+    }
+    return found ? total : null;
+}
+
+function extractPerformanceList(payload) {
+    const candidates = [
+        payload && payload.data && payload.data.data && payload.data.data.list,
+        payload && payload.data && payload.data.list,
+        payload && payload.list
+    ];
+    for (const list of candidates) {
+        if (Array.isArray(list)) return list;
+    }
+    return [];
+}
+
+function lookupFromPerformanceRow(row) {
+    if (!row) return { fba_warehouse_qty: null, ctr_7d: null, cvr_7d: null };
+    return {
+        fba_warehouse_qty: pickNumeric(row, ['afn_fulfillable_quantity', 'fulfillable_quantity', 'quantity']),
+        ctr_7d: toFormPercent(pickNumeric(row, ['ctr'])),
+        cvr_7d: toFormPercent(pickNumeric(row, ['cvr']))
+    };
+}
+
+module.exports = {
+    METRIC_KEYS,
+    pickNumeric,
+    mapPerformanceRow,
+    asinsToPrefill,
+    rowHasAnyMetric,
+    mergePrefillIntoRows,
+    last7CompleteDays,
+    isEmptyField,
+    fillEmptySprintFields,
+    toFormPercent,
+    sumFbaQty,
+    extractPerformanceList,
+    lookupFromPerformanceRow
+};
