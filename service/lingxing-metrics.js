@@ -101,10 +101,13 @@ function isEmptyField(v) {
 function fillEmptySprintFields(form, lookup) {
     const next = { ...(form || {}) };
     const src = lookup || {};
-    for (const key of ['fba_warehouse_qty', 'ctr_7d', 'cvr_7d']) {
+    for (const key of ['fba_warehouse_qty', 'ctr_7d', 'cvr_7d', 'current_daily_orders']) {
         if (isEmptyField(next[key]) && src[key] != null && Number.isFinite(Number(src[key]))) {
             next[key] = src[key];
         }
+    }
+    if (isEmptyField(next.current_rank) && src.current_rank) {
+        next.current_rank = src.current_rank;
     }
     return next;
 }
@@ -141,12 +144,40 @@ function extractPerformanceList(payload) {
     return [];
 }
 
+function pickFbaOnSaleQty(row) {
+    const nested = row && row.available_inventory && typeof row.available_inventory === 'object'
+        ? pickNumeric(row.available_inventory, ['afn_fulfillable_quantity'])
+        : null;
+    if (nested != null) return nested;
+    return pickNumeric(row, ['afn_fulfillable_quantity', 'fulfillable_quantity']);
+}
+
+function formatCurrentRank(row) {
+    const small = pickNumeric(row, ['small_cate_rank']);
+    const big = pickNumeric(row, ['cate_rank']);
+    const parts = [];
+    if (small != null) parts.push(`小类排名${small}名`);
+    if (big != null) parts.push(`大类排名${big}名`);
+    return parts.length ? parts.join(', ') : null;
+}
+
 function lookupFromPerformanceRow(row) {
-    if (!row) return { fba_warehouse_qty: null, ctr_7d: null, cvr_7d: null };
+    if (!row) {
+        return {
+            fba_warehouse_qty: null,
+            ctr_7d: null,
+            cvr_7d: null,
+            current_daily_orders: null,
+            current_rank: null
+        };
+    }
+    const avg7 = pickNumeric(row, ['volume_avg_7d', 'avg_volume']);
     return {
-        fba_warehouse_qty: pickNumeric(row, ['afn_fulfillable_quantity', 'fulfillable_quantity', 'quantity']),
+        fba_warehouse_qty: pickFbaOnSaleQty(row),
         ctr_7d: toFormPercent(pickNumeric(row, ['ctr'])),
-        cvr_7d: toFormPercent(pickNumeric(row, ['cvr']))
+        cvr_7d: toFormPercent(pickNumeric(row, ['cvr'])),
+        current_daily_orders: avg7 == null ? null : Math.round(avg7 * 100) / 100,
+        current_rank: formatCurrentRank(row)
     };
 }
 
@@ -163,5 +194,6 @@ module.exports = {
     toFormPercent,
     sumFbaQty,
     extractPerformanceList,
-    lookupFromPerformanceRow
+    lookupFromPerformanceRow,
+    formatCurrentRank
 };

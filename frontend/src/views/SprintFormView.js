@@ -132,6 +132,18 @@ export default {
                 const lxP = http.get('/api/sprints/lingxing-lookup', { params: { asin } });
                 const [productRes, lxRes] = await Promise.allSettled([productP, lxP]);
 
+                if (lxRes.status === 'fulfilled') {
+                    const lx = lxRes.value.data || {};
+                    const empty = (v) => v === undefined || v === null || String(v).trim() === '';
+                    if (empty(form.current_daily_orders) && lx.current_daily_orders != null) form.current_daily_orders = lx.current_daily_orders;
+                    if (empty(form.current_rank) && lx.current_rank) form.current_rank = lx.current_rank;
+                    if (empty(form.fba_warehouse_qty) && lx.fba_warehouse_qty != null) form.fba_warehouse_qty = lx.fba_warehouse_qty;
+                    if (empty(form.ctr_7d) && lx.ctr_7d != null) form.ctr_7d = lx.ctr_7d;
+                    if (empty(form.cvr_7d) && lx.cvr_7d != null) form.cvr_7d = lx.cvr_7d;
+                } else {
+                    notes.push(getApiError(lxRes.reason, '领星查询失败'));
+                }
+
                 if (productRes.status === 'fulfilled') {
                     const data = productRes.value.data;
                     const c = data.economics && data.economics.computed;
@@ -151,16 +163,6 @@ export default {
                     }
                 } else {
                     notes.push(getApiError(productRes.reason, '产品查询失败'));
-                }
-
-                if (lxRes.status === 'fulfilled') {
-                    const lx = lxRes.value.data || {};
-                    const empty = (v) => v === undefined || v === null || String(v).trim() === '';
-                    if (empty(form.fba_warehouse_qty) && lx.fba_warehouse_qty != null) form.fba_warehouse_qty = lx.fba_warehouse_qty;
-                    if (empty(form.ctr_7d) && lx.ctr_7d != null) form.ctr_7d = lx.ctr_7d;
-                    if (empty(form.cvr_7d) && lx.cvr_7d != null) form.cvr_7d = lx.cvr_7d;
-                } else {
-                    notes.push(getApiError(lxRes.reason, '领星查询失败'));
                 }
 
                 error.value = notes.join('；');
@@ -324,14 +326,6 @@ export default {
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">目标排名</div>
                                 <input v-model="form.target_rank" class="search-input" style="width:100%;" type="text" placeholder="请输入小类排名xx名, 大类排名xx名">
                             </div>
-                            <div style="grid-column: span 4;">
-                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">冲刺目标</div>
-                                <input v-model="form.sprint_goal" class="search-input" style="width:100%;" type="text" maxlength="500">
-                            </div>
-                            <div style="grid-column: span 4;">
-                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">冲刺关键词</div>
-                                <textarea v-model="form.sprint_keywords" class="sop-remark" rows="3" placeholder="一行一个或逗号分隔"></textarea>
-                            </div>
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">7日日均CTR(%)</div>
                                 <input v-model="form.ctr_7d" class="search-input" style="width:100%;" type="number" min="0" step="any">
@@ -351,6 +345,14 @@ export default {
                             <div>
                                 <div style="font-size:13px; color:#606266; margin-bottom:6px;">所需点击数</div>
                                 <input v-model="form.required_clicks" class="search-input" style="width:100%;" type="number" min="0" step="any">
+                            </div>
+                            <div style="grid-column: span 4;">
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">冲刺目标</div>
+                                <textarea v-model="form.sprint_goal" class="sop-remark" rows="3" maxlength="500" placeholder="冲刺目标说明"></textarea>
+                            </div>
+                            <div style="grid-column: span 4;">
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">冲刺关键词</div>
+                                <textarea v-model="form.sprint_keywords" class="sop-remark" rows="3" placeholder="一行一个或逗号分隔"></textarea>
                             </div>
                         </div>
                     </div>
@@ -389,7 +391,7 @@ export default {
                     <div class="module-body">
                         <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px;">
                             <div>
-                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">FBA仓库数量</div>
+                                <div style="font-size:13px; color:#606266; margin-bottom:6px;">FBA在售数量</div>
                                 <input v-model="form.fba_warehouse_qty" class="search-input" style="width:100%;" type="number" min="0" step="any">
                             </div>
                             <div>

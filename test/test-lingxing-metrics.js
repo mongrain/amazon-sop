@@ -80,12 +80,14 @@ assert.strictEqual(isEmptyField(0), false);
 assert.strictEqual(isEmptyField('0.3'), false);
 
 const filled = fillEmptySprintFields(
-    { fba_warehouse_qty: '', ctr_7d: 0.4, cvr_7d: '' },
-    { fba_warehouse_qty: 120, ctr_7d: 0.9, cvr_7d: 8.5 }
+    { fba_warehouse_qty: '', ctr_7d: 0.4, cvr_7d: '', current_daily_orders: '', current_rank: '' },
+    { fba_warehouse_qty: 120, ctr_7d: 0.9, cvr_7d: 8.5, current_daily_orders: 87, current_rank: '小类排名12名, 大类排名100名' }
 );
 assert.strictEqual(filled.fba_warehouse_qty, 120);
 assert.strictEqual(filled.ctr_7d, 0.4);
 assert.strictEqual(filled.cvr_7d, 8.5);
+assert.strictEqual(filled.current_daily_orders, 87);
+assert.strictEqual(filled.current_rank, '小类排名12名, 大类排名100名');
 
 assert.strictEqual(toFormPercent(0.004), 0.4);
 assert.strictEqual(toFormPercent(0.42), 42);
@@ -116,8 +118,22 @@ assert.strictEqual(realMapped.total_sales, 9792.12);
 assert.strictEqual(realMapped.ad_orders, 134);
 
 assert.deepStrictEqual(
-    lookupFromPerformanceRow({ afn_fulfillable_quantity: 6104, ctr: '0.0048', cvr: '0.2477' }),
-    { fba_warehouse_qty: 6104, ctr_7d: 0.48, cvr_7d: 24.77 }
+    lookupFromPerformanceRow({
+        afn_fulfillable_quantity: 6104,
+        quantity: 14815,
+        ctr: '0.0048',
+        cvr: '0.2477',
+        volume_avg_7d: '87.0',
+        small_cate_rank: 12,
+        cate_rank: 100
+    }),
+    {
+        fba_warehouse_qty: 6104,
+        ctr_7d: 0.48,
+        cvr_7d: 24.77,
+        current_daily_orders: 87,
+        current_rank: '小类排名12名, 大类排名100名'
+    }
 );
 
 assert.strictEqual(extractPerformanceList({ data: { data: { list: [{ asin: 'B0A' }] } } }).length, 1);
