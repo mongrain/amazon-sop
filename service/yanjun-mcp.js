@@ -82,9 +82,9 @@ async function callYanjunTool(toolName, args, opts) {
         id: 1,
         method: 'initialize',
         params: {
-            protocolVersion: '2024-11-05',
+            protocolVersion: '2026-08-05',
             capabilities: {},
-            clientInfo: { name: 'sop-system', version: '1.0.0' }
+            clientInfo: { name: 'GPT', version: '1.0.0' }
         }
     }, headers);
     if (!init.res.ok) {

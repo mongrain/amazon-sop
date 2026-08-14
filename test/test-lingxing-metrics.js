@@ -5,7 +5,7 @@ const {
     asinsToPrefill,
     rowHasAnyMetric,
     mergePrefillIntoRows,
-    last7CompleteDays,
+    previousCompleteDay,
     isEmptyField,
     fillEmptySprintFields,
     toFormPercent,
@@ -71,8 +71,8 @@ assert.strictEqual(merged[1].orders, 1);
 assert.strictEqual(merged[1].ad_spend, 3.2);
 assert.strictEqual(merged[1].bsr_rank, 12);
 
-assert.deepStrictEqual(last7CompleteDays('2026-08-13'), {
-    start_date: '2026-08-06',
+assert.deepStrictEqual(previousCompleteDay('2026-08-13'), {
+    start_date: '2026-08-12',
     end_date: '2026-08-12'
 });
 

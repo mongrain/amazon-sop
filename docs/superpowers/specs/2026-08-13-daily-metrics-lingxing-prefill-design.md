@@ -202,7 +202,7 @@ Body：`{ "date": "YYYY-MM-DD" }`，必填且合法。
 
 ### 领星取数
 
-- **7 日窗口**：结束日 = 昨天，开始日 = 昨天往前共 7 个自然日；`currency_code=USD`；`search_field=asin`。
+- **单日窗口**：开始日 = 结束日 = 昨天；`currency_code=USD`；`search_field=asin`。
 - **CTR/CVR**：产品表现返回的 ctr/cvr，写入表单百分数，与领星后台展示一致（`0.3` = 0.3%）。实现时对照一次真实响应决定是否 ×100，禁止猜。对不上则该字段不写。
 - **FBA**：优先 Listing（按 ASIN）的 FBA 可售数量（如 `afn_fulfillable_quantity`）多仓/多店铺相加；Listing 没有再查 FBA 库存/补货建议。对不上则不写。
 

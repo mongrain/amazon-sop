@@ -9,7 +9,7 @@ const {
     mapPerformanceRow,
     asinsToPrefill,
     lookupFromPerformanceRow,
-    last7CompleteDays
+    previousCompleteDay
 } = require('../service/lingxing-metrics');
 
 function metricOrNull(v) {
@@ -850,6 +850,7 @@ function registerProtectedPageApi(app, ctx) {
     app.post('/api/metrics/manual/lingxing-prefill', async (req, res) => {
         try {
             const dateStr = String(req.body.date || '').trim();
+            const forceOverwrite = req.body.force_overwrite === true || String(req.body.force_overwrite || '').trim().toLowerCase() === 'true';
             if (!parseYmd(dateStr)) return res.status(400).json({ error: 'date 不合法，需 YYYY-MM-DD' });
             const sprints = await queryAll(
                 "SELECT asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE')"
@@ -860,8 +861,8 @@ function registerProtectedPageApi(app, ctx) {
                 [dateStr]
             );
             const existingAsins = existing.map((row) => String(row.asin || '').trim()).filter(Boolean);
-            const need = asinsToPrefill(sprintAsins, existingAsins);
-            const skipped_existing = sprintAsins.length - need.length;
+            const need = forceOverwrite ? sprintAsins : asinsToPrefill(sprintAsins, existingAsins);
+            const skipped_existing = forceOverwrite ? 0 : (sprintAsins.length - need.length);
             if (need.length === 0) {
                 return res.json({
                     date: dateStr,
@@ -871,7 +872,7 @@ function registerProtectedPageApi(app, ctx) {
                     missing_in_lingxing: 0
                 });
             }
-            const range = last7CompleteDays(dateStr);
+            const range = previousCompleteDay(dateStr);
             const list = await queryProductPerformanceAll({
                 startDate: range.start_date,
                 endDate: range.end_date,
@@ -910,7 +911,7 @@ function registerProtectedPageApi(app, ctx) {
             const asin = String(req.query.asin || '').trim();
             if (!asin) return res.status(400).json({ error: 'asin 不能为空' });
             const today = toDateString(new Date());
-            const range = last7CompleteDays(today);
+            const range = previousCompleteDay(today);
             const list = await queryProductPerformanceAll({
                 startDate: range.start_date,
                 endDate: range.end_date,

@@ -20,16 +20,15 @@ function rowHasPulledMetric(row) {
     return PULL_KEYS.some((k) => String(row[k] ?? '').trim() !== '');
 }
 
-function mergePrefill(rows, prefillRows) {
+function mergePrefill(rows, prefillRows, overwrite) {
     const byAsin = new Map();
     for (const item of prefillRows || []) {
         const key = String(item.asin || '').trim().toUpperCase();
         if (key) byAsin.set(key, item);
     }
     return rows.map((row) => {
-        if (rowHasPulledMetric(row)) return row;
         const prefill = byAsin.get(String(row.asin || '').trim().toUpperCase());
-        if (!prefill) return row;
+        if (!prefill || (!overwrite && rowHasPulledMetric(row))) return row;
         const next = { ...row };
         for (const k of PULL_KEYS) {
             if (prefill[k] != null && prefill[k] !== '') next[k] = prefill[k];
@@ -55,6 +54,7 @@ export default {
         const submitting = ref(false);
         const pulling = ref(false);
         const dateReady = ref(false);
+        const forceOverwrite = ref(false);
 
         async function loadData(date) {
             try {
@@ -72,9 +72,14 @@ export default {
             if (!recordDate.value) return alert('请选择日期');
             pulling.value = true;
             try {
-                const { data } = await http.post('/api/metrics/manual/lingxing-prefill', { date: recordDate.value });
-                rows.value = mergePrefill(rows.value, data.rows || []);
-                submitMsg.value = `已预填 ${data.filled || 0} 行，跳过已录入 ${data.skipped_existing || 0} 行，领星无数据 ${data.missing_in_lingxing || 0} 行`;
+                const { data } = await http.post('/api/metrics/manual/lingxing-prefill', {
+                    date: recordDate.value,
+                    force_overwrite: forceOverwrite.value
+                });
+                rows.value = mergePrefill(rows.value, data.rows || [], forceOverwrite.value);
+                submitMsg.value = forceOverwrite.value
+                    ? `已强制覆盖 ${data.filled || 0} 行，领星无数据 ${data.missing_in_lingxing || 0} 行`
+                    : `已预填 ${data.filled || 0} 行，跳过已录入 ${data.skipped_existing || 0} 行，领星无数据 ${data.missing_in_lingxing || 0} 行`;
             } catch (e) {
                 alert(getApiError(e, '领星拉取失败'));
             } finally {
@@ -140,7 +145,7 @@ export default {
             dateReady.value = true;
         });
 
-        return { recordDate, rows, submitMsg, resultText, submitting, pulling, addRow, removeRow, submitMetrics, pullLingxing };
+        return { recordDate, rows, submitMsg, resultText, submitting, pulling, forceOverwrite, addRow, removeRow, submitMetrics, pullLingxing };
     },
     template: `<div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
@@ -158,6 +163,10 @@ export default {
                         <input v-model="recordDate" class="search-input" type="date">
                         <button class="btn-primary" type="button" :disabled="submitting || pulling" @click="submitMetrics">提交</button>
                         <button class="btn-secondary" type="button" :disabled="submitting || pulling" @click="pullLingxing">{{ pulling ? '拉取中...' : '从领星拉取' }}</button>
+                        <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#606266; user-select:none;">
+                            <input v-model="forceOverwrite" type="checkbox" :disabled="submitting || pulling">
+                            强制覆盖
+                        </label>
                         <button class="btn-secondary" type="button" @click="addRow">+ 添加行</button>
                         <span style="font-size:13px; color:#606266;">{{ submitMsg }}</span>
                     </div>

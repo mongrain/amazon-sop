@@ -88,9 +88,9 @@ function shiftYmd(ymd, days) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-function last7CompleteDays(todayYmd) {
+function previousCompleteDay(todayYmd) {
     const end_date = shiftYmd(todayYmd, -1);
-    const start_date = shiftYmd(end_date, -6);
+    const start_date = end_date;
     return { start_date, end_date };
 }
 
@@ -189,7 +189,7 @@ module.exports = {
     asinsToPrefill,
     rowHasAnyMetric,
     mergePrefillIntoRows,
-    last7CompleteDays,
+    previousCompleteDay,
     isEmptyField,
     fillEmptySprintFields,
     toFormPercent,

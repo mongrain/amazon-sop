@@ -47,7 +47,7 @@
   - `asinsToPrefill(sprintAsins, existingAsins)` → 未录入 ASIN（大小写不敏感）
   - `rowHasAnyMetric(row)` → boolean
   - `mergePrefillIntoRows(rows, prefillRows)` → 新 rows；已有任意指标的行不覆盖
-  - `last7CompleteDays(todayYmd)` → `{ start_date, end_date }` 昨天往前 7 天
+  - `previousCompleteDay(todayYmd)` → `{ start_date, end_date }` 昨天单日
   - `isEmptyField(v)` → 空 / 空白为 true；`0` 为 false
   - `fillEmptySprintFields(form, lookup)` → 只填空的三字段
   - `toFormPercent(raw)` → 表单百分数；`null` 若无效。规则：绝对值 `> 1` 视为已是百分数；`<= 1` 视为比率 ×100（实现时若真实领星响应相反再改测试）
@@ -102,7 +102,7 @@
 
 **Interfaces:**
 - `GET /api/sprints/lingxing-lookup?asin=` → `{ asin, fba_warehouse_qty, ctr_7d, cvr_7d }` 缺项 `null`
-- CTR/CVR：产品表现 `last7CompleteDays` + `toFormPercent`
+- CTR/CVR：产品表现 `previousCompleteDay` + `toFormPercent`
 - FBA：Listing 按 ASIN 的可售数量求和，没有再试 `lingxing_query_fba_valid_list`
 - 前端 `queryAsin`：`Promise.allSettled` 产品库 + 领星；只填空三字段；一边失败不影响另一边
 
