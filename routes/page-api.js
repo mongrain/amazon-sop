@@ -11,6 +11,11 @@ const {
     lookupFromPerformanceRow,
     previousCompleteDay
 } = require('../service/lingxing-metrics');
+const {
+    assembleReviewPayload,
+    toYmd,
+    weekDateList
+} = require('../service/weekly-review');
 
 function metricOrNull(v) {
     if (v === undefined || v === null || v === '') return null;
@@ -752,18 +757,38 @@ function registerProtectedPageApi(app, ctx) {
         }
     });
 
+    async function loadReviewBundle(id, todayYmd) {
+        const review = await queryOne(
+            `SELECT wr.*, sp.asin
+             FROM weekly_reviews wr
+             JOIN sprint_projects sp ON wr.sprint_id = sp.id
+             WHERE wr.id = ?`,
+            [id]
+        );
+        if (!review) return null;
+        const sprint = await queryOne(
+            `SELECT sprint_goal, target_daily_orders, ctr_7d, cvr_7d, cpc,
+                    promo_tacos_limit, stable_tacos_target, max_loss_7d, profit_margin, budget_cap
+             FROM sprint_projects WHERE id = ?`,
+            [review.sprint_id]
+        ) || {};
+        const dates = weekDateList(toYmd(review.week_start_date));
+        const metrics = dates.length
+            ? await queryAll(
+                `SELECT record_date, orders, impressions, clicks, ad_spend, total_sales, tacos
+                 FROM daily_asin_metrics
+                 WHERE asin = ? AND record_date BETWEEN ? AND ?`,
+                [review.asin, dates[0], dates[6]]
+            )
+            : [];
+        return assembleReviewPayload({ review, sprint, metricRows: metrics, todayYmd });
+    }
+
     app.get('/api/reviews/:id', async (req, res) => {
         try {
-            const id = Number(req.params.id);
-            const review = await queryOne(
-                `SELECT wr.*, sp.asin
-                 FROM weekly_reviews wr
-                 JOIN sprint_projects sp ON wr.sprint_id = sp.id
-                 WHERE wr.id = ?`,
-                [id]
-            );
-            if (!review) return res.status(404).json({ error: '复盘不存在' });
-            res.json({ review });
+            const bundle = await loadReviewBundle(Number(req.params.id), toDateString(new Date()));
+            if (!bundle) return res.status(404).json({ error: '复盘不存在' });
+            res.json(bundle);
         } catch (e) {
             res.status(500).json({ error: e.message });
         }
