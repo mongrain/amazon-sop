@@ -80,6 +80,7 @@ export default {
 
         async function pullLingxing() {
             if (!reviewId.value) return;
+            if (pulling.value) return;
             pulling.value = true;
             pullMsg.value = '';
             error.value = '';

@@ -811,17 +811,26 @@ function registerProtectedPageApi(app, ctx) {
         const derived = computeDerivedMetrics({
             ad_spend, ad_sales, total_sales, impressions, clicks, orders
         });
-        await runSql(
-            `INSERT INTO daily_asin_metrics
-             (asin, record_date, data_source, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, acos, tacos, ctr, cvr)
-             VALUES (?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
-            [
-                asin, dateStr,
-                sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders,
-                bsr_rank,
-                derived.acos, derived.tacos, derived.ctr, derived.cvr
-            ]
-        );
+        try {
+            await runSql(
+                `INSERT INTO daily_asin_metrics
+                 (asin, record_date, data_source, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, acos, tacos, ctr, cvr)
+                 VALUES (?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+                [
+                    asin, dateStr,
+                    sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders,
+                    bsr_rank,
+                    derived.acos, derived.tacos, derived.ctr, derived.cvr
+                ]
+            );
+            return true;
+        } catch (e) {
+            const code = e && (e.code || (e.parent && e.parent.code) || (e.original && e.original.code));
+            const errno = e && (e.errno || (e.parent && e.parent.errno) || (e.original && e.original.errno));
+            // Concurrent pull may race on uk_asin_date — skip, do not overwrite
+            if (code === 'ER_DUP_ENTRY' || errno === 1062) return false;
+            throw e;
+        }
     }
 
     app.post('/api/reviews/:id/lingxing-pull', async (req, res) => {
@@ -838,7 +847,7 @@ function registerProtectedPageApi(app, ctx) {
             if (!asin) return res.status(400).json({ error: 'ASIN 不能为空' });
 
             const need = datesToPull(bundle.week.days);
-            const skipped_existing = countSkippedExisting(bundle.week.days);
+            let skipped_existing = countSkippedExisting(bundle.week.days);
             if (!need.length) {
                 return res.json({
                     filled: 0,
@@ -863,11 +872,13 @@ function registerProtectedPageApi(app, ctx) {
                     missing_in_lingxing += 1;
                     continue;
                 }
-                await insertLingxingDailyRow(asin, day, mapped);
-                filled += 1;
+                const inserted = await insertLingxingDailyRow(asin, day, mapped);
+                if (inserted) filled += 1;
+                else skipped_existing += 1;
             }
 
             const next = await loadReviewBundle(id, todayYmd);
+            if (!next) return res.status(404).json({ error: '复盘不存在' });
             res.json({
                 filled,
                 skipped_existing,
