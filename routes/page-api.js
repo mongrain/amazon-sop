@@ -14,7 +14,11 @@ const {
 const {
     assembleReviewPayload,
     toYmd,
-    weekDateList
+    weekDateList,
+    datesToPull,
+    countSkippedExisting,
+    mappedHasMetric,
+    computeDerivedMetrics
 } = require('../service/weekly-review');
 
 function metricOrNull(v) {
@@ -791,6 +795,89 @@ function registerProtectedPageApi(app, ctx) {
             res.json(bundle);
         } catch (e) {
             res.status(500).json({ error: e.message });
+        }
+    });
+
+    async function insertLingxingDailyRow(asin, dateStr, mapped) {
+        const sessions = Number.isFinite(Number(mapped.sessions)) ? Math.trunc(Number(mapped.sessions)) : null;
+        const orders = Number.isFinite(Number(mapped.orders)) ? Math.trunc(Number(mapped.orders)) : null;
+        const impressions = Number.isFinite(Number(mapped.impressions)) ? Math.trunc(Number(mapped.impressions)) : null;
+        const clicks = Number.isFinite(Number(mapped.clicks)) ? Math.trunc(Number(mapped.clicks)) : null;
+        const ad_spend = Number.isFinite(Number(mapped.ad_spend)) ? Number(mapped.ad_spend) : null;
+        const ad_sales = Number.isFinite(Number(mapped.ad_sales)) ? Number(mapped.ad_sales) : null;
+        const total_sales = Number.isFinite(Number(mapped.total_sales)) ? Number(mapped.total_sales) : null;
+        const ad_orders = Number.isFinite(Number(mapped.ad_orders)) ? Math.trunc(Number(mapped.ad_orders)) : null;
+        const bsr_rank = Number.isFinite(Number(mapped.bsr_rank)) ? Math.trunc(Number(mapped.bsr_rank)) : null;
+        const derived = computeDerivedMetrics({
+            ad_spend, ad_sales, total_sales, impressions, clicks, orders
+        });
+        await runSql(
+            `INSERT INTO daily_asin_metrics
+             (asin, record_date, data_source, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, acos, tacos, ctr, cvr)
+             VALUES (?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+            [
+                asin, dateStr,
+                sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders,
+                bsr_rank,
+                derived.acos, derived.tacos, derived.ctr, derived.cvr
+            ]
+        );
+    }
+
+    app.post('/api/reviews/:id/lingxing-pull', async (req, res) => {
+        const id = Number(req.params.id);
+        let filled = 0;
+        try {
+            const todayYmd = toDateString(new Date());
+            const bundle = await loadReviewBundle(id, todayYmd);
+            if (!bundle) return res.status(404).json({ error: '复盘不存在' });
+            if (bundle.review.status === 'COMPLETED') {
+                return res.status(400).json({ error: '已完成的复盘不能拉取' });
+            }
+            const asin = String(bundle.review.asin || '').trim();
+            if (!asin) return res.status(400).json({ error: 'ASIN 不能为空' });
+
+            const need = datesToPull(bundle.week.days);
+            const skipped_existing = countSkippedExisting(bundle.week.days);
+            if (!need.length) {
+                return res.json({
+                    filled: 0,
+                    skipped_existing,
+                    missing_in_lingxing: 0,
+                    week: bundle.week,
+                    suggestion: bundle.suggestion
+                });
+            }
+
+            let missing_in_lingxing = 0;
+            for (const day of need) {
+                const list = await queryProductPerformanceAll({
+                    startDate: day,
+                    endDate: day,
+                    asins: [asin],
+                    sids: LINGXING_SID_50_US
+                });
+                const item = list.find((row) => String(row.asin || '').trim().toUpperCase() === asin.toUpperCase());
+                const mapped = item ? mapPerformanceRow(item) : null;
+                if (!mapped || !mappedHasMetric(mapped)) {
+                    missing_in_lingxing += 1;
+                    continue;
+                }
+                await insertLingxingDailyRow(asin, day, mapped);
+                filled += 1;
+            }
+
+            const next = await loadReviewBundle(id, todayYmd);
+            res.json({
+                filled,
+                skipped_existing,
+                missing_in_lingxing,
+                week: next.week,
+                suggestion: next.suggestion
+            });
+        } catch (e) {
+            const status = e.status === 400 || e.status === 502 ? e.status : 500;
+            res.status(status).json({ error: e.message || '领星拉取失败', filled });
         }
     });
 
