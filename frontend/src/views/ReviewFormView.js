@@ -36,8 +36,10 @@ export default {
         const pullMsg = ref('');
         const saving = ref(false);
         const pulling = ref(false);
+        const generating = ref(false);
+        const optimizeMsg = ref('');
         const form = reactive({
-            actual_max_loss: '', actual_tacos: '', decision: '', status: 'PENDING', summary: ''
+            actual_max_loss: '', actual_tacos: '', decision: '', status: 'PENDING', summary: '', optimization_plan: ''
         });
 
         function hydrateReview(data, { fillSuggestion }) {
@@ -50,6 +52,7 @@ export default {
             form.decision = review.value.decision || '';
             form.status = review.value.status || 'PENDING';
             form.summary = review.value.summary || '';
+            form.optimization_plan = review.value.optimization_plan || '';
             if (review.value.status !== 'COMPLETED') {
                 applySuggestion(form, data.suggestion);
             }
@@ -90,6 +93,31 @@ export default {
             }
         }
 
+        async function generateOptimizePlan() {
+            if (!reviewId.value) return;
+            if (generating.value) return;
+            if (review.value && review.value.status === 'COMPLETED') return;
+            if (!isEmptyField(form.optimization_plan)) {
+                optimizeMsg.value = '已有优化建议，未覆盖';
+                return;
+            }
+            generating.value = true;
+            optimizeMsg.value = '生成中...';
+            error.value = '';
+            try {
+                const { data } = await http.post('/api/reviews/' + reviewId.value + '/optimize-plan');
+                if (isEmptyField(form.optimization_plan) && data && data.optimization_plan) {
+                    form.optimization_plan = data.optimization_plan;
+                }
+                optimizeMsg.value = data && data.skipped ? '已有优化建议，未重新生成' : '已生成，请核对后保存';
+            } catch (e) {
+                error.value = getApiError(e, '生成优化方案失败');
+                optimizeMsg.value = '';
+            } finally {
+                generating.value = false;
+            }
+        }
+
         async function submitForm() {
             error.value = '';
             saving.value = true;
@@ -107,7 +135,7 @@ export default {
 
         return {
             review, sprint, week, error, pullMsg, saving, pulling, form,
-            submitForm, pullLingxing
+            submitForm, pullLingxing, generating, optimizeMsg, generateOptimizePlan
         };
     },
     template: `<a v-if="review" :href="'/reviews?sprint_id=' + review.sprint_id" class="back-link">← 返回周复盘列表</a>
@@ -117,7 +145,7 @@ export default {
                         <h1>周复盘填写</h1>
                         <div v-if="review" class="page-desc">ASIN：<code>{{ review.asin }}</code> · 周起始日：{{ review.week_start_date }}</div>
                     </div>
-                    <button v-if="review && review.status !== 'COMPLETED'" class="btn-secondary" type="button" :disabled="pulling || saving" @click="pullLingxing">{{ pulling ? '拉取中...' : '从领星拉取' }}</button>
+                    <button v-if="review && review.status !== 'COMPLETED'" class="btn-secondary" type="button" :disabled="pulling || saving || generating" @click="pullLingxing">{{ pulling ? '拉取中...' : '从领星拉取' }}</button>
                 </div>
             </div>
 
@@ -174,8 +202,23 @@ export default {
                     </div>
                 </div>
 
+                <div class="module-card" style="margin-bottom:16px;">
+                    <div class="module-header" style="cursor:default;"><div class="module-name">优化建议</div></div>
+                    <div class="module-body">
+                        <button
+                            v-if="review.status !== 'COMPLETED'"
+                            class="btn-secondary"
+                            type="button"
+                            :disabled="generating || saving || pulling"
+                            @click="generateOptimizePlan"
+                        >{{ generating ? '生成中...' : '生成优化方案' }}</button>
+                        <div v-if="optimizeMsg" style="font-size:13px; color:#606266; margin:8px 0;">{{ optimizeMsg }}</div>
+                        <textarea v-model="form.optimization_plan" class="sop-remark" rows="8" style="margin-top:8px;"></textarea>
+                    </div>
+                </div>
+
                 <div style="display:flex; gap:12px; align-items:center;">
-                    <button type="submit" class="btn-primary" :disabled="saving || pulling">{{ saving ? '保存中...' : '保存' }}</button>
+                    <button type="submit" class="btn-primary" :disabled="saving || pulling || generating">{{ saving ? '保存中...' : '保存' }}</button>
                     <a class="btn-secondary" :href="'/reviews?sprint_id=' + review.sprint_id">取消</a>
                 </div>
             </form>`

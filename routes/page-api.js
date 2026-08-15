@@ -18,7 +18,8 @@ const {
     datesToPull,
     countSkippedExisting,
     mappedHasMetric,
-    computeDerivedMetrics
+    computeDerivedMetrics,
+    generateOptimizePlan
 } = require('../service/weekly-review');
 
 function metricOrNull(v) {
@@ -890,6 +891,32 @@ function registerProtectedPageApi(app, ctx) {
         } catch (e) {
             const status = e.status === 400 || e.status === 502 ? e.status : 500;
             res.status(status).json({ error: e.message || '领星拉取失败', filled });
+        }
+    });
+
+    app.post('/api/reviews/:id/optimize-plan', async (req, res) => {
+        try {
+            const id = Number(req.params.id);
+            const bundle = await loadReviewBundle(id, toDateString(new Date()));
+            if (!bundle) return res.status(404).json({ error: '复盘不存在' });
+            if (bundle.review.status === 'COMPLETED') {
+                return res.status(400).json({ error: '已完成的复盘不能生成优化方案' });
+            }
+            if (!String(process.env.GPT_API_URL || '').trim()) {
+                return res.status(400).json({ error: '未配置 GPT_API_URL' });
+            }
+            const { chatCompletionText } = require('../gpt');
+            const result = await generateOptimizePlan({
+                review: bundle.review,
+                sprint: bundle.sprint,
+                week: bundle.week,
+                suggestion: bundle.suggestion,
+                chatFn: chatCompletionText
+            });
+            res.json(result);
+        } catch (e) {
+            const status = e.status === 400 ? 400 : 502;
+            res.status(status).json({ error: e.message || '生成优化方案失败' });
         }
     });
 
