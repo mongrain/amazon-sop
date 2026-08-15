@@ -289,6 +289,68 @@ function applySuggestion(form, suggestion) {
     return next;
 }
 
+const OPTIMIZE_SYSTEM_PROMPT = [
+    '你是亚马逊广告优化助手。根据提供的冲刺目标和本周日报，给出针对该 ASIN 冲刺广告的可执行优化建议。',
+    '要求：',
+    '- 使用中文分条（每条一行，以 - 开头）',
+    '- 围绕预算、出价、是否控花费、是否冲曝光或单量',
+    '- 不要改写或否定规则建议决策（CONTINUE / MAINTENANCE / STOPPED）',
+    '- 不要编造未提供的搜索词、广告活动名或关键词',
+    '- 只依据给定数据；缺数据就写明依据不足，给保守动作'
+].join('\n');
+
+function buildOptimizeUserContent({ review, sprint, week, suggestion }) {
+    const src = sprint || {};
+    const totals = (week && week.totals) || {};
+    const days = ((week && week.days) || []).map((d) => ({
+        date: d.date,
+        status: d.status,
+        orders: d.orders,
+        ad_spend: d.ad_spend,
+        total_sales: d.total_sales,
+        tacos: d.tacos
+    }));
+    return JSON.stringify({
+        asin: review && review.asin,
+        sprint_goal: src.sprint_goal,
+        target_daily_orders: src.target_daily_orders,
+        ctr_7d: src.ctr_7d,
+        cvr_7d: src.cvr_7d,
+        cpc: src.cpc,
+        promo_tacos_limit: src.promo_tacos_limit,
+        stable_tacos_target: src.stable_tacos_target,
+        max_loss_7d: src.max_loss_7d,
+        budget_cap: src.budget_cap,
+        days,
+        totals: {
+            ad_spend_sum: totals.ad_spend_sum,
+            actual_tacos: totals.actual_tacos,
+            avg_daily_orders: totals.avg_daily_orders,
+            ctr: totals.ctr,
+            cvr: totals.cvr,
+            cpc: totals.cpc
+        },
+        suggested_decision: suggestion && suggestion.decision
+    }, null, 2);
+}
+
+async function generateOptimizePlan({ review, sprint, week, suggestion, chatFn }) {
+    const existing = review && review.optimization_plan;
+    if (!isEmptyField(existing)) {
+        return { optimization_plan: String(existing).trim(), skipped: true };
+    }
+    const text = await chatFn(OPTIMIZE_SYSTEM_PROMPT, buildOptimizeUserContent({
+        review, sprint, week, suggestion
+    }));
+    const plan = String(text || '').trim();
+    if (!plan) {
+        const err = new Error('GPT 返回内容为空');
+        err.status = 502;
+        throw err;
+    }
+    return { optimization_plan: plan, skipped: false };
+}
+
 module.exports = {
     isEmptyField,
     toYmd,
@@ -302,5 +364,8 @@ module.exports = {
     assembleReviewPayload,
     mappedHasMetric,
     computeDerivedMetrics,
-    applySuggestion
+    applySuggestion,
+    OPTIMIZE_SYSTEM_PROMPT,
+    buildOptimizeUserContent,
+    generateOptimizePlan
 };
