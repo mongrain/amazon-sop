@@ -39,7 +39,7 @@ export default {
         const generating = ref(false);
         const optimizeMsg = ref('');
         const form = reactive({
-            actual_max_loss: '', actual_tacos: '', decision: '', status: 'PENDING', summary: '', optimization_plan: ''
+            actual_max_loss: '', actual_tacos: '', decision: '', status: 'PENDING', summary: ''
         });
 
         function hydrateReview(data, { fillSuggestion }) {
@@ -52,7 +52,6 @@ export default {
             form.decision = review.value.decision || '';
             form.status = review.value.status || 'PENDING';
             form.summary = review.value.summary || '';
-            form.optimization_plan = review.value.optimization_plan || '';
             if (review.value.status !== 'COMPLETED') {
                 applySuggestion(form, data.suggestion);
             }
@@ -97,19 +96,13 @@ export default {
             if (!reviewId.value) return;
             if (generating.value) return;
             if (review.value && review.value.status === 'COMPLETED') return;
-            if (!isEmptyField(form.optimization_plan)) {
-                optimizeMsg.value = '已有优化建议，未覆盖';
-                return;
-            }
             generating.value = true;
             optimizeMsg.value = '生成中...';
             error.value = '';
             try {
                 const { data } = await http.post('/api/reviews/' + reviewId.value + '/optimize-plan');
-                if (isEmptyField(form.optimization_plan) && data && data.optimization_plan) {
-                    form.optimization_plan = data.optimization_plan;
-                }
-                optimizeMsg.value = data && data.skipped ? '已有优化建议，未重新生成' : '已生成，请核对后保存';
+                form.summary = (data && (data.summary || data.optimization_plan)) || '';
+                optimizeMsg.value = '已生成并保存';
             } catch (e) {
                 error.value = getApiError(e, '生成优化方案失败');
                 optimizeMsg.value = '';
@@ -196,24 +189,19 @@ export default {
                             </div>
                         </div>
                         <div style="margin-top:12px;">
-                            <div style="font-size:13px; color:#606266; margin-bottom:6px;">复盘结论记录 *</div>
-                            <textarea v-model="form.summary" class="sop-remark" rows="6" required></textarea>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
+                                <div style="font-size:13px; color:#606266;">复盘结论记录 *</div>
+                                <button
+                                    v-if="review.status !== 'COMPLETED'"
+                                    class="btn-secondary"
+                                    type="button"
+                                    :disabled="generating || saving || pulling"
+                                    @click="generateOptimizePlan"
+                                >{{ generating ? '生成中...' : '生成优化方案' }}</button>
+                            </div>
+                            <div v-if="optimizeMsg" style="font-size:13px; color:#606266; margin-bottom:8px;">{{ optimizeMsg }}</div>
+                            <textarea v-model="form.summary" class="sop-remark" rows="8" required></textarea>
                         </div>
-                    </div>
-                </div>
-
-                <div class="module-card" style="margin-bottom:16px;">
-                    <div class="module-header" style="cursor:default;"><div class="module-name">优化建议</div></div>
-                    <div class="module-body">
-                        <button
-                            v-if="review.status !== 'COMPLETED'"
-                            class="btn-secondary"
-                            type="button"
-                            :disabled="generating || saving || pulling"
-                            @click="generateOptimizePlan"
-                        >{{ generating ? '生成中...' : '生成优化方案' }}</button>
-                        <div v-if="optimizeMsg" style="font-size:13px; color:#606266; margin:8px 0;">{{ optimizeMsg }}</div>
-                        <textarea v-model="form.optimization_plan" class="sop-remark" rows="8" style="margin-top:8px;"></textarea>
                     </div>
                 </div>
 
