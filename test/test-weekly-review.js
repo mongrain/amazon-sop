@@ -103,6 +103,19 @@ assert.strictEqual(derived.tacos, 10);
 assert.strictEqual(derived.ctr, 0.04);
 assert.strictEqual(derived.cvr, 0.1);
 
+assert.strictEqual(computeDerivedMetrics({
+    ad_spend: 10, ad_sales: 50, total_sales: 100, tacos: 12
+}).tacos, 12);
+assert.strictEqual(computeDerivedMetrics({
+    ad_spend: 10, total_sales: 100
+}).tacos, 10);
+assert.strictEqual(computeDerivedMetrics({
+    ad_spend: 10, total_sales: 0, tacos: 8
+}).tacos, 8);
+assert.strictEqual(computeDerivedMetrics({
+    ad_spend: 10, total_sales: 0
+}).tacos, null);
+
 assert.strictEqual(isEmptyField(''), true);
 assert.strictEqual(isEmptyField(0), false);
 

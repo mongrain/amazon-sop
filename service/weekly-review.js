@@ -270,7 +270,9 @@ function computeDerivedMetrics(row) {
     const clicks = numOrNull(row && row.clicks);
     const orders = numOrNull(row && row.orders);
     const acos = ad_sales && ad_sales > 0 && ad_spend !== null ? ad_spend / ad_sales * 100 : null;
-    const tacos = total_sales && total_sales > 0 && ad_spend !== null ? ad_spend / total_sales * 100 : null;
+    const tacosOverride = numOrNull(row && row.tacos);
+    const tacosComputed = total_sales && total_sales > 0 && ad_spend !== null ? ad_spend / total_sales * 100 : null;
+    const tacos = tacosOverride !== null ? tacosOverride : tacosComputed;
     const ctr = impressions && impressions > 0 && clicks !== null ? clicks / impressions : null;
     const cvr = clicks && clicks > 0 && orders !== null ? orders / clicks : null;
     return { acos, tacos, ctr, cvr };

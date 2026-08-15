@@ -809,7 +809,8 @@ function registerProtectedPageApi(app, ctx) {
         const ad_orders = Number.isFinite(Number(mapped.ad_orders)) ? Math.trunc(Number(mapped.ad_orders)) : null;
         const bsr_rank = Number.isFinite(Number(mapped.bsr_rank)) ? Math.trunc(Number(mapped.bsr_rank)) : null;
         const derived = computeDerivedMetrics({
-            ad_spend, ad_sales, total_sales, impressions, clicks, orders
+            ad_spend, ad_sales, total_sales, impressions, clicks, orders,
+            tacos: mapped.tacos
         });
         try {
             await runSql(
@@ -939,7 +940,7 @@ function registerProtectedPageApi(app, ctx) {
                 "SELECT id, asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE') ORDER BY id DESC"
             );
             const metrics = await queryAll(
-                `SELECT asin, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank
+                `SELECT asin, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, tacos
                  FROM daily_asin_metrics WHERE record_date = ?`,
                 [dateStr]
             );
@@ -961,7 +962,8 @@ function registerProtectedPageApi(app, ctx) {
                     total_sales: metricOrNull(saved.total_sales),
                     ad_orders: metricOrNull(saved.ad_orders),
                     core_kw_rank: metricOrNull(saved.core_kw_rank),
-                    bsr_rank: metricOrNull(saved.bsr_rank)
+                    bsr_rank: metricOrNull(saved.bsr_rank),
+                    tacos: metricOrNull(saved.tacos)
                 };
             });
             res.json({ current_date: dateStr, rows });

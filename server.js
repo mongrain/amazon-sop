@@ -32,6 +32,7 @@ const {
 } = require('./service/data-collection/asin/job-runner');
 const { resolveOperatingStartedAtFromManualDays } = require('./service/operating-days');
 const { siteToStation } = require('./service/get-sell-time');
+const { computeDerivedMetrics } = require('./service/weekly-review');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
 const { compareStorefrontImages } = require('./gpt');
@@ -1330,10 +1331,23 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
             const core_kw_rank = row.core_kw_rank !== undefined ? Number(row.core_kw_rank) : null;
             const bsr_rank = row.bsr_rank !== undefined ? Number(row.bsr_rank) : null;
 
-            const acos = ad_sales && Number(ad_sales) > 0 && ad_spend !== null ? Number(ad_spend) / Number(ad_sales) * 100 : null;
-            const tacos = total_sales && Number(total_sales) > 0 && ad_spend !== null ? Number(ad_spend) / Number(total_sales) * 100 : null;
-            const ctr = impressions && Number(impressions) > 0 && clicks !== null ? Number(clicks) / Number(impressions) : null;
-            const cvr = clicks && Number(clicks) > 0 && orders !== null ? Number(orders) / Number(clicks) : null;
+            const tacosInput = row.tacos !== undefined && row.tacos !== null && row.tacos !== ''
+                && Number.isFinite(Number(row.tacos))
+                ? Number(row.tacos)
+                : null;
+            const derived = computeDerivedMetrics({
+                ad_spend: ad_spend !== null && Number.isFinite(ad_spend) ? ad_spend : null,
+                ad_sales: ad_sales !== null && Number.isFinite(ad_sales) ? ad_sales : null,
+                total_sales: total_sales !== null && Number.isFinite(total_sales) ? total_sales : null,
+                impressions: impressions !== null && Number.isFinite(impressions) ? impressions : null,
+                clicks: clicks !== null && Number.isFinite(clicks) ? clicks : null,
+                orders: orders !== null && Number.isFinite(orders) ? orders : null,
+                tacos: tacosInput
+            });
+            const acos = derived.acos;
+            const tacos = derived.tacos;
+            const ctr = derived.ctr;
+            const cvr = derived.cvr;
 
             await runSql(
                 `INSERT INTO daily_asin_metrics
