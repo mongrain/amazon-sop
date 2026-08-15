@@ -1,6 +1,7 @@
 const METRIC_KEYS = [
     'sessions', 'orders', 'impressions', 'clicks',
-    'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'bsr_rank'
+    'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'bsr_rank',
+    'tacos'
 ];
 
 const PERF_FIELD_MAP = {
@@ -12,7 +13,8 @@ const PERF_FIELD_MAP = {
     ad_sales: ['ad_sales_amount', 'ad_sales', 'ad_sale_amount'],
     total_sales: ['amount', 'sales_amount', 'sales', 'total_sales'],
     ad_orders: ['ad_order_quantity', 'ad_order_num', 'ad_orders', 'ad_order_count'],
-    bsr_rank: ['small_cate_rank', 'cate_rank', 'bsr_rank']
+    bsr_rank: ['small_cate_rank', 'cate_rank', 'bsr_rank'],
+    tacos: ['tacos', 'ta_cos', 'tacos_rate', 'advertising_cost_of_sales']
 };
 
 function pickNumeric(row, keys) {
@@ -28,13 +30,28 @@ function pickNumeric(row, keys) {
     return null;
 }
 
+function fillTacosFallback(mapped) {
+    const next = { ...(mapped || {}) };
+    const existing = Number(next.tacos);
+    if (next.tacos !== '' && next.tacos !== null && next.tacos !== undefined && Number.isFinite(existing)) {
+        return next;
+    }
+    const spend = Number(next.ad_spend);
+    const sales = Number(next.total_sales);
+    if (Number.isFinite(spend) && Number.isFinite(sales) && sales > 0) {
+        next.tacos = Math.round(spend / sales * 100 * 100) / 100;
+    }
+    return next;
+}
+
 function mapPerformanceRow(row) {
     const asin = String((row && row.asin) || '').trim();
     const mapped = { asin };
     for (const metric of METRIC_KEYS) {
         mapped[metric] = pickNumeric(row, PERF_FIELD_MAP[metric]);
     }
-    return mapped;
+    mapped.tacos = toFormPercent(mapped.tacos);
+    return fillTacosFallback(mapped);
 }
 
 function normalizeAsin(asin) {
@@ -186,6 +203,7 @@ module.exports = {
     METRIC_KEYS,
     pickNumeric,
     mapPerformanceRow,
+    fillTacosFallback,
     asinsToPrefill,
     rowHasAnyMetric,
     mergePrefillIntoRows,

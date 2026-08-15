@@ -44,6 +44,7 @@ assert.strictEqual(mapped.total_sales, 120.5);
 assert.strictEqual(mapped.ad_orders, 2);
 assert.strictEqual(mapped.core_kw_rank, undefined);
 assert.strictEqual(mapped.bsr_rank, 12);
+assert.strictEqual(mapped.tacos, 9.96);
 
 assert.deepStrictEqual(
     asinsToPrefill(['B0A', 'B0B', 'b0c'], ['b0a', 'B0X']),
@@ -97,6 +98,20 @@ assert.strictEqual(toFormPercent(0.42), 42);
 assert.strictEqual(toFormPercent(8.5), 8.5);
 assert.strictEqual(toFormPercent(null), null);
 
+assert.strictEqual(mapPerformanceRow({ tacos: 0.15 }).tacos, 15);
+assert.strictEqual(mapPerformanceRow({ tacos: 15 }).tacos, 15);
+assert.strictEqual(mapPerformanceRow({ ta_cos: 12 }).tacos, 12);
+assert.strictEqual(mapPerformanceRow({ tacos_rate: 0.18 }).tacos, 18);
+assert.strictEqual(mapPerformanceRow({ advertising_cost_of_sales: 0.2 }).tacos, 20);
+assert.strictEqual(mapPerformanceRow({ ad_cost: 10, amount: 50 }).tacos, 20);
+assert.strictEqual(mapPerformanceRow({ tacos: 12, ad_cost: 10, amount: 50 }).tacos, 12);
+assert.strictEqual(mapPerformanceRow({ ad_cost: 10, amount: 0 }).tacos, null);
+assert.strictEqual(mapPerformanceRow({ ad_cost: 10 }).tacos, null);
+
+const { fillTacosFallback } = require('../service/lingxing-metrics');
+assert.strictEqual(fillTacosFallback({ ad_spend: 10, total_sales: 80 }).tacos, 12.5);
+assert.strictEqual(fillTacosFallback({ tacos: 9, ad_spend: 10, total_sales: 80 }).tacos, 9);
+
 assert.strictEqual(sumFbaQty([
     { afn_fulfillable_quantity: 10 },
     { fulfillable_quantity: 5 },
@@ -119,6 +134,7 @@ assert.strictEqual(realMapped.ad_spend, 609.29);
 assert.strictEqual(realMapped.ad_sales, 2319.6);
 assert.strictEqual(realMapped.total_sales, 9792.12);
 assert.strictEqual(realMapped.ad_orders, 134);
+assert.strictEqual(realMapped.tacos, 6.22);
 
 assert.deepStrictEqual(
     lookupFromPerformanceRow({
