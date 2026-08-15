@@ -6,7 +6,9 @@ const {
     buildWeekDays
 } = require('../service/weekly-review');
 
-assert.ok(OPTIMIZE_SYSTEM_PROMPT.includes('不要改写'));
+assert.ok(
+    OPTIMIZE_SYSTEM_PROMPT.includes('换打法') || OPTIMIZE_SYSTEM_PROMPT.includes('不要编造')
+);
 assert.ok(OPTIMIZE_SYSTEM_PROMPT.includes('CONTINUE'));
 
 const optWeek = buildWeekDays('2026-08-10', '2026-08-14', [
@@ -26,12 +28,15 @@ const userContent = buildOptimizeUserContent({
         budget_cap: 200
     },
     week: optWeek,
-    suggestion: { decision: 'CONTINUE' }
+    suggestion: { decision: 'CONTINUE' },
+    ads: { campaigns: [{ name: 'B0XX-冲刺' }], keywords: [], search_terms: [] }
 });
 assert.ok(userContent.includes('B0XX'));
 assert.ok(userContent.includes('冲量'));
 assert.ok(userContent.includes('CONTINUE'));
 assert.ok(userContent.includes('suggested_decision'));
+assert.ok(userContent.includes('B0XX-冲刺'));
+assert.ok(userContent.includes('campaigns'));
 
 let chatCalls = 0;
 const chatFn = async (sys, user) => {
@@ -47,23 +52,25 @@ const chatFn = async (sys, user) => {
         sprint: { sprint_goal: '冲量' },
         week: optWeek,
         suggestion: { decision: 'CONTINUE' },
+        ads: { campaigns: [], keywords: [], search_terms: [] },
         chatFn
     });
-    assert.strictEqual(generated.skipped, false);
-    assert.strictEqual(generated.optimization_plan, '- 控花费\n- 冲单量');
+    assert.strictEqual(generated.summary, '- 控花费\n- 冲单量');
+    assert.strictEqual(generated.optimization_plan, generated.summary);
     assert.strictEqual(chatCalls, 1);
 
     chatCalls = 0;
-    const skipped = await generateOptimizePlan({
+    const overwritten = await generateOptimizePlan({
         review: { asin: 'B0XX', optimization_plan: '已有方案' },
         sprint: {},
         week: optWeek,
         suggestion: { decision: 'CONTINUE' },
+        ads: { campaigns: [], keywords: [], search_terms: [] },
         chatFn
     });
-    assert.strictEqual(skipped.skipped, true);
-    assert.strictEqual(skipped.optimization_plan, '已有方案');
-    assert.strictEqual(chatCalls, 0);
+    assert.strictEqual(overwritten.summary, '- 控花费\n- 冲单量');
+    assert.strictEqual(overwritten.optimization_plan, overwritten.summary);
+    assert.strictEqual(chatCalls, 1);
 
     chatCalls = 0;
     let emptyErr = null;
@@ -73,6 +80,7 @@ const chatFn = async (sys, user) => {
             sprint: {},
             week: optWeek,
             suggestion: { decision: 'CONTINUE' },
+            ads: { campaigns: [], keywords: [], search_terms: [] },
             chatFn: async () => '   '
         });
     } catch (e) {

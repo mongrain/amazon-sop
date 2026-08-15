@@ -290,16 +290,18 @@ function applySuggestion(form, suggestion) {
 }
 
 const OPTIMIZE_SYSTEM_PROMPT = [
-    '你是亚马逊广告优化助手。根据提供的冲刺目标和本周日报，给出针对该 ASIN 冲刺广告的可执行优化建议。',
+    '你是亚马逊广告优化助手。根据提供的冲刺广告报表和本周日报，写出下一周可执行优化，作为复盘结论。',
     '要求：',
-    '- 使用中文分条（每条一行，以 - 开头）',
-    '- 围绕预算、出价、是否控花费、是否冲曝光或单量',
+    '- 使用中文分条（每条一行，以 - 开头），每条带一句数据依据',
+    '- 必须点名 JSON 中出现的活动名、投放词或搜索词',
+    '- 覆盖：该换打法的（自动↔手动、广泛↔精确）、该降出价或暂停/否定的变差词、该加预算或出价的高转化词',
     '- 不要改写或否定规则建议决策（CONTINUE / MAINTENANCE / STOPPED）',
-    '- 不要编造未提供的搜索词、广告活动名或关键词',
-    '- 只依据给定数据；缺数据就写明依据不足，给保守动作'
+    '- 不要编造未出现的活动名、投放词或搜索词',
+    '- campaigns/keywords/search_terms 为空时，写明未找到该 ASIN 已启用且名称含「ASIN-冲刺」的广告，不要编造',
+    '- 只依据给定数据；缺数据就写明依据不足'
 ].join('\n');
 
-function buildOptimizeUserContent({ review, sprint, week, suggestion }) {
+function buildOptimizeUserContent({ review, sprint, week, suggestion, ads }) {
     const src = sprint || {};
     const totals = (week && week.totals) || {};
     const days = ((week && week.days) || []).map((d) => ({
@@ -330,17 +332,16 @@ function buildOptimizeUserContent({ review, sprint, week, suggestion }) {
             cvr: totals.cvr,
             cpc: totals.cpc
         },
-        suggested_decision: suggestion && suggestion.decision
+        suggested_decision: suggestion && suggestion.decision,
+        campaigns: (ads && ads.campaigns) || [],
+        keywords: (ads && ads.keywords) || [],
+        search_terms: (ads && ads.search_terms) || []
     }, null, 2);
 }
 
-async function generateOptimizePlan({ review, sprint, week, suggestion, chatFn }) {
-    const existing = review && review.optimization_plan;
-    if (!isEmptyField(existing)) {
-        return { optimization_plan: String(existing).trim(), skipped: true };
-    }
+async function generateOptimizePlan({ review, sprint, week, suggestion, ads, chatFn }) {
     const text = await chatFn(OPTIMIZE_SYSTEM_PROMPT, buildOptimizeUserContent({
-        review, sprint, week, suggestion
+        review, sprint, week, suggestion, ads
     }));
     const plan = String(text || '').trim();
     if (!plan) {
@@ -348,7 +349,7 @@ async function generateOptimizePlan({ review, sprint, week, suggestion, chatFn }
         err.status = 502;
         throw err;
     }
-    return { optimization_plan: plan, skipped: false };
+    return { summary: plan, optimization_plan: plan };
 }
 
 module.exports = {
