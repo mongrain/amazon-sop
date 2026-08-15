@@ -1,6 +1,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { getApiError, http } from '@/utils/index.js';
+import ReviewWeekVisual from '@/components/ReviewWeekVisual.js';
 
 function resolveReviewId(route) {
     return route.params.id ? String(route.params.id) : null;
@@ -21,19 +22,9 @@ function applySuggestion(form, suggestion) {
     }
 }
 
-function statusLabel(status) {
-    if (status === 'filled') return '已填';
-    if (status === 'missing') return '缺填';
-    if (status === 'upcoming') return '未到';
-    return '-';
-}
-
-function fmtVal(v) {
-    return v === null || v === undefined || v === '' ? '-' : v;
-}
-
 export default {
     name: 'ReviewFormView',
+    components: { ReviewWeekVisual },
     setup() {
         const router = useRouter();
         const route = useRoute();
@@ -116,7 +107,7 @@ export default {
 
         return {
             review, sprint, week, error, pullMsg, saving, pulling, form,
-            submitForm, pullLingxing, statusLabel, fmtVal
+            submitForm, pullLingxing
         };
     },
     template: `<a v-if="review" :href="'/reviews?sprint_id=' + review.sprint_id" class="back-link">← 返回周复盘列表</a>
@@ -135,48 +126,7 @@ export default {
             </div>
             <div v-if="pullMsg" style="font-size:13px; color:#606266; margin-bottom:16px;">{{ pullMsg }}</div>
 
-            <div v-if="week" class="module-card" style="margin-bottom:16px;">
-                <div class="module-header" style="cursor:default;"><div class="module-name">本周数据</div></div>
-                <div class="module-body">
-                    <div class="table-container" style="max-height:none;">
-                        <table class="product-table">
-                            <thead>
-                                <tr>
-                                    <th>日期</th>
-                                    <th>状态</th>
-                                    <th>订单</th>
-                                    <th>广告花费</th>
-                                    <th>总销售额</th>
-                                    <th>TACOS</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="d in week.days" :key="d.date">
-                                    <td>{{ d.date }}</td>
-                                    <td>{{ statusLabel(d.status) }}</td>
-                                    <td>{{ fmtVal(d.orders) }}</td>
-                                    <td>{{ fmtVal(d.ad_spend) }}</td>
-                                    <td>{{ fmtVal(d.total_sales) }}</td>
-                                    <td>{{ fmtVal(d.tacos) }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div v-if="week && sprint" class="module-card" style="margin-bottom:16px;">
-                <div class="module-header" style="cursor:default;"><div class="module-name">对照</div></div>
-                <div class="module-body" style="font-size:13px; color:#303133; line-height:1.8;">
-                    <div v-if="sprint.sprint_goal">冲刺目标：{{ sprint.sprint_goal }}</div>
-                    <div>花费合计：{{ fmtVal(week.totals && week.totals.actual_max_loss) }} vs 7天最大亏损额度：{{ fmtVal(sprint.max_loss_7d) }}</div>
-                    <div>本周 TACOS：{{ fmtVal(week.totals && week.totals.actual_tacos) }} vs 推广期允许：{{ fmtVal(sprint.promo_tacos_limit) }} / 稳定期目标：{{ fmtVal(sprint.stable_tacos_target) }}</div>
-                    <div>日均单量：{{ fmtVal(week.totals && week.totals.avg_daily_orders) }} vs 目标日均单量：{{ fmtVal(sprint.target_daily_orders) }}</div>
-                    <div v-if="week.totals && week.totals.ctr != null">本周 CTR(%)：{{ week.totals.ctr }} vs 目标：{{ fmtVal(sprint.ctr_7d) }}</div>
-                    <div v-if="week.totals && week.totals.cvr != null">本周 CVR(%)：{{ week.totals.cvr }} vs 目标：{{ fmtVal(sprint.cvr_7d) }}</div>
-                    <div v-if="week.totals && week.totals.cpc != null">本周 CPC：{{ week.totals.cpc }} vs 目标：{{ fmtVal(sprint.cpc) }}</div>
-                </div>
-            </div>
+            <ReviewWeekVisual :week="week" :sprint="sprint" />
 
             <form v-if="review" @submit.prevent="submitForm" style="max-width:900px;">
                 <div class="module-card" style="margin-bottom:16px;">
