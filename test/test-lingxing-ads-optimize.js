@@ -117,6 +117,11 @@ assert.strictEqual(resolveUs50ProfileId({ list: [] }), null);
     assert.strictEqual(pack.ads.campaigns[0].name.includes('冲刺'), true);
     assert.ok(calls.some((c) => c.name === 'lingxing_ad_campaign_keyword_report'));
     assert.deepStrictEqual(calls.find((c) => c.name === 'lingxing_ad_campaign_report').args.asin, 'B0XX');
+    const stCall = calls.find((c) => c.name === 'lingxing_ad_campaign_search_term_report');
+    assert.ok(stCall);
+    assert.strictEqual(typeof stCall.args.campaign_id, 'string');
+    assert.strictEqual(stCall.args.campaign_id, 'c1');
+    assert.ok(Array.isArray(calls.find((c) => c.name === 'lingxing_ad_campaign_keyword_report').args.campaign_id));
 
     const emptyTool = async (name) => {
         if (name === 'lingxing_ad_auth_shops') return { list: [{ sid: '17438', profile_id: 77 }] };

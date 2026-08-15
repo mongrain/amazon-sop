@@ -293,15 +293,18 @@ async function fetchSprintAdPack({ asin, weekStartYmd, todayYmd, callTool }) {
         campaign_id,
         with_ring: 1
     });
-    const searchTermPayload = await tool('lingxing_ad_campaign_search_term_report', {
-        ...commonArgs,
-        campaign_id,
-        asin,
-        with_ring: true
-    });
+    const search_terms = [];
+    for (const id of campaign_id) {
+        const searchTermPayload = await tool('lingxing_ad_campaign_search_term_report', {
+            ...commonArgs,
+            campaign_id: String(id),
+            asin,
+            with_ring: true
+        });
+        search_terms.push(...extractPerformanceList(searchTermPayload).map(mapSearchTermRow));
+    }
 
     const keywords = extractPerformanceList(keywordPayload).map(mapKeywordRow);
-    const search_terms = extractPerformanceList(searchTermPayload).map(mapSearchTermRow);
     return {
         ads: trimAdPack({ campaigns, keywords, search_terms }),
         profileId
