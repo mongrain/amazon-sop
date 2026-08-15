@@ -1,11 +1,11 @@
 import { onMounted, ref, watch } from 'vue';
 import { getApiError, http } from '@/utils/index.js';
 
-const METRIC_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'core_kw_rank', 'bsr_rank'];
-const PULL_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'ad_orders', 'bsr_rank'];
+const METRIC_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'tacos', 'ad_orders', 'core_kw_rank', 'bsr_rank'];
+const PULL_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'tacos', 'ad_orders', 'bsr_rank'];
 
 function emptyRow(prefillId, asin) {
-    return { id: prefillId || '-', asin: asin || '', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', ad_orders: '', core_kw_rank: '', bsr_rank: '' };
+    return { id: prefillId || '-', asin: asin || '', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', tacos: '', ad_orders: '', core_kw_rank: '', bsr_rank: '' };
 }
 
 function rowFromApi(r) {
@@ -44,6 +44,26 @@ function parseNum(v) {
     const n = Number(s);
     return Number.isFinite(n) ? n : null;
 }
+
+function isEmptyMetric(v) {
+    return v === undefined || v === null || String(v).trim() === '';
+}
+
+function fillTacosIfEmpty(row) {
+    if (!isEmptyMetric(row && row.tacos)) return row;
+    const spend = parseNum(row && row.ad_spend);
+    const sales = parseNum(row && row.total_sales);
+    if (spend === null || sales === null || sales <= 0) return row;
+    return { ...row, tacos: Math.round(spend / sales * 100 * 100) / 100 };
+}
+
+function onSpendOrSalesInput(row) {
+    if (!isEmptyMetric(row.tacos)) return;
+    const spend = parseNum(row.ad_spend);
+    const sales = parseNum(row.total_sales);
+    if (spend === null || sales === null || sales <= 0) return;
+    row.tacos = Math.round(spend / sales * 100 * 100) / 100;
+}
 export default {
     name: 'MetricsManualView',
     setup() {
@@ -76,7 +96,7 @@ export default {
                     date: recordDate.value,
                     force_overwrite: forceOverwrite.value
                 });
-                rows.value = mergePrefill(rows.value, data.rows || [], forceOverwrite.value);
+                rows.value = mergePrefill(rows.value, data.rows || [], forceOverwrite.value).map(fillTacosIfEmpty);
                 submitMsg.value = forceOverwrite.value
                     ? `已强制覆盖 ${data.filled || 0} 行，领星无数据 ${data.missing_in_lingxing || 0} 行`
                     : `已预填 ${data.filled || 0} 行，跳过已录入 ${data.skipped_existing || 0} 行，领星无数据 ${data.missing_in_lingxing || 0} 行`;
@@ -104,7 +124,7 @@ export default {
                 if (!obj.asin) continue;
                 for (const k of METRIC_KEYS) {
                     if (k === 'asin') continue;
-                    if (['ad_spend', 'ad_sales', 'total_sales'].includes(k)) {
+                    if (['ad_spend', 'ad_sales', 'total_sales', 'tacos'].includes(k)) {
                         const n = parseNum(row[k]);
                         if (n !== null) obj[k] = n;
                     } else {
@@ -145,7 +165,7 @@ export default {
             dateReady.value = true;
         });
 
-        return { recordDate, rows, submitMsg, resultText, submitting, pulling, forceOverwrite, addRow, removeRow, submitMetrics, pullLingxing };
+        return { recordDate, rows, submitMsg, resultText, submitting, pulling, forceOverwrite, addRow, removeRow, submitMetrics, pullLingxing, onSpendOrSalesInput };
     },
     template: `<div class="page-header">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
@@ -171,7 +191,7 @@ export default {
                         <span style="font-size:13px; color:#606266;">{{ submitMsg }}</span>
                     </div>
                     <div style="font-size:12px; color:#909399; margin-top:8px;">
-                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / 广告订单数(ad_orders) / BSR排名(bsr_rank)
+                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / TACOS(%) / 广告订单数(ad_orders) / BSR排名(bsr_rank)
                     </div>
                 </div>
             </div>
@@ -189,6 +209,7 @@ export default {
                             <th style="min-width:110px" title="ad_spend">广告花费</th>
                             <th style="min-width:110px" title="ad_sales">广告销售额</th>
                             <th style="min-width:110px" title="total_sales">总销售额</th>
+                            <th style="min-width:100px" title="tacos">TACOS(%)</th>
                             <th style="min-width:100px" title="ad_orders">广告订单数</th>
                             <th style="min-width:90px" title="bsr_rank">BSR排名</th>
                             <th style="min-width:90px">操作</th>
@@ -202,9 +223,10 @@ export default {
                             <td><input v-model="row.orders" class="search-input" style="width:80px"></td>
                             <td><input v-model="row.impressions" class="search-input" style="width:110px"></td>
                             <td><input v-model="row.clicks" class="search-input" style="width:90px"></td>
-                            <td><input v-model="row.ad_spend" class="search-input" style="width:110px"></td>
+                            <td><input v-model="row.ad_spend" class="search-input" style="width:110px" @input="onSpendOrSalesInput(row)"></td>
                             <td><input v-model="row.ad_sales" class="search-input" style="width:110px"></td>
-                            <td><input v-model="row.total_sales" class="search-input" style="width:110px"></td>
+                            <td><input v-model="row.total_sales" class="search-input" style="width:110px" @input="onSpendOrSalesInput(row)"></td>
+                            <td><input v-model="row.tacos" class="search-input" style="width:100px"></td>
                             <td><input v-model="row.ad_orders" class="search-input" style="width:100px"></td>
                             <td><input v-model="row.bsr_rank" class="search-input" style="width:90px"></td>
                             <td><button class="btn-icon" type="button" @click="removeRow(idx)">删</button></td>
