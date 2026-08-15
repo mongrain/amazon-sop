@@ -902,17 +902,31 @@ function registerProtectedPageApi(app, ctx) {
             if (bundle.review.status === 'COMPLETED') {
                 return res.status(400).json({ error: '已完成的复盘不能生成优化方案' });
             }
+            if (!String(process.env.YANJUN_MCP_URL || '').trim()) {
+                return res.status(400).json({ error: '未配置领星网关' });
+            }
             if (!String(process.env.GPT_API_URL || '').trim()) {
                 return res.status(400).json({ error: '未配置 GPT_API_URL' });
             }
+            const { fetchSprintAdPack } = require('../service/lingxing-ads-optimize');
+            const pack = await fetchSprintAdPack({
+                asin: bundle.review.asin,
+                weekStartYmd: bundle.week.start,
+                todayYmd: toDateString(new Date())
+            });
             const { chatCompletionText } = require('../gpt');
             const result = await generateOptimizePlan({
                 review: bundle.review,
                 sprint: bundle.sprint,
                 week: bundle.week,
                 suggestion: bundle.suggestion,
+                ads: pack.ads,
                 chatFn: chatCompletionText
             });
+            await runSql(
+                'UPDATE weekly_reviews SET summary = ?, optimization_plan = ?, updated_at = NOW() WHERE id = ?',
+                [result.summary, result.optimization_plan, id]
+            );
             res.json(result);
         } catch (e) {
             const status = e.status === 400 ? 400 : 502;
@@ -938,9 +952,7 @@ function registerProtectedPageApi(app, ctx) {
             if (!['PENDING', 'COMPLETED'].includes(status)) throw new Error('复盘状态不合法');
             if (!summary) throw new Error('复盘结论不能为空');
 
-            const optimization_plan = req.body.optimization_plan == null
-                ? ''
-                : String(req.body.optimization_plan);
+            const optimization_plan = summary;
 
             await runSql(
                 `UPDATE weekly_reviews SET

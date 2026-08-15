@@ -9,7 +9,8 @@ const {
     isHighConvert,
     trimAdPack,
     mapCampaignRow,
-    resolveUs50ProfileId
+    resolveUs50ProfileId,
+    fetchSprintAdPack
 } = require('../service/lingxing-ads-optimize');
 
 assert.deepStrictEqual(adsReportWindow('2026-08-10', '2026-08-14'), {
@@ -84,4 +85,63 @@ assert.strictEqual(resolveUs50ProfileId({
 }), 99);
 assert.strictEqual(resolveUs50ProfileId({ list: [] }), null);
 
-console.log('ok');
+(async () => {
+    const calls = [];
+    const callTool = async (name, args) => {
+        calls.push({ name, args });
+        if (name === 'lingxing_ad_auth_shops') {
+            return { list: [{ sid: '17438', profile_id: 77, country: 'US' }] };
+        }
+        if (name === 'lingxing_ad_campaign_report') {
+            return { list: [
+                { campaign_id: 'c1', campaign_name: 'B0XX-冲刺-自动', state: 'enabled', spends: 20 },
+                { campaign_id: 'c2', campaign_name: 'B0XX-维护', state: 'enabled', spends: 99 }
+            ] };
+        }
+        if (name === 'lingxing_ad_campaign_keyword_report') {
+            return { list: [{ keyword_id: 'k1', keyword_text: 'gloves', spends: 5, orders: 2, acos: 15 }] };
+        }
+        if (name === 'lingxing_ad_campaign_search_term_report') {
+            return { list: [{ query: 'work gloves', spends: 4, cvr_ring: -1 }] };
+        }
+        throw new Error('unexpected ' + name);
+    };
+    const pack = await fetchSprintAdPack({
+        asin: 'B0XX',
+        weekStartYmd: '2026-08-10',
+        todayYmd: '2026-08-14',
+        callTool
+    });
+    assert.strictEqual(pack.profileId, 77);
+    assert.strictEqual(pack.ads.campaigns.length, 1);
+    assert.strictEqual(pack.ads.campaigns[0].name.includes('冲刺'), true);
+    assert.ok(calls.some((c) => c.name === 'lingxing_ad_campaign_keyword_report'));
+    assert.deepStrictEqual(calls.find((c) => c.name === 'lingxing_ad_campaign_report').args.asin, 'B0XX');
+
+    const emptyTool = async (name) => {
+        if (name === 'lingxing_ad_auth_shops') return { list: [{ sid: '17438', profile_id: 77 }] };
+        if (name === 'lingxing_ad_campaign_report') return { list: [] };
+        throw new Error('should not fetch terms');
+    };
+    const empty = await fetchSprintAdPack({
+        asin: 'B0XX', weekStartYmd: '2026-08-10', todayYmd: '2026-08-14', callTool: emptyTool
+    });
+    assert.deepStrictEqual(empty.ads.campaigns, []);
+
+    let noProfileErr = null;
+    try {
+        await fetchSprintAdPack({
+            asin: 'B0XX',
+            weekStartYmd: '2026-08-10',
+            todayYmd: '2026-08-14',
+            callTool: async () => ({ list: [] })
+        });
+    } catch (e) {
+        noProfileErr = e;
+    }
+    assert.ok(noProfileErr);
+    assert.strictEqual(noProfileErr.status, 400);
+    assert.strictEqual(noProfileErr.message, '未找到50宴君北美广告店铺');
+
+    console.log('ok');
+})().catch((e) => { console.error(e); process.exit(1); });

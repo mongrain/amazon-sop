@@ -252,6 +252,62 @@ function resolveUs50ProfileId(payload, sid = '17438') {
     return null;
 }
 
+function emptyAds() {
+    return { campaigns: [], keywords: [], search_terms: [] };
+}
+
+async function fetchSprintAdPack({ asin, weekStartYmd, todayYmd, callTool }) {
+    const tool = callTool || require('./yanjun-mcp').callYanjunTool;
+    const shopsPayload = await tool('lingxing_ad_auth_shops', {});
+    const profileId = resolveUs50ProfileId(shopsPayload);
+    if (profileId == null) {
+        const err = new Error('未找到50宴君北美广告店铺');
+        err.status = 400;
+        throw err;
+    }
+
+    const win = adsReportWindow(weekStartYmd, todayYmd);
+    const report_date = formatReportDate(win.start, win.end);
+    const commonArgs = {
+        report_date,
+        profile_ids: [profileId],
+        page: 1,
+        length: 50,
+        sort_field: 'spends',
+        sort_type: 'desc'
+    };
+
+    const campaignPayload = await tool('lingxing_ad_campaign_report', {
+        ...commonArgs,
+        asin,
+        state: 'enabled'
+    });
+    const campaigns = filterSprintCampaigns(extractPerformanceList(campaignPayload), asin);
+    if (!campaigns.length) {
+        return { ads: emptyAds(), profileId };
+    }
+
+    const campaign_id = campaigns.map((c) => c.id).filter(Boolean);
+    const keywordPayload = await tool('lingxing_ad_campaign_keyword_report', {
+        ...commonArgs,
+        campaign_id,
+        with_ring: 1
+    });
+    const searchTermPayload = await tool('lingxing_ad_campaign_search_term_report', {
+        ...commonArgs,
+        campaign_id,
+        asin,
+        with_ring: true
+    });
+
+    const keywords = extractPerformanceList(keywordPayload).map(mapKeywordRow);
+    const search_terms = extractPerformanceList(searchTermPayload).map(mapSearchTermRow);
+    return {
+        ads: trimAdPack({ campaigns, keywords, search_terms }),
+        profileId
+    };
+}
+
 module.exports = {
     adsReportWindow,
     formatReportDate,
@@ -265,5 +321,6 @@ module.exports = {
     isWorseRing,
     isHighConvert,
     trimAdPack,
-    resolveUs50ProfileId
+    resolveUs50ProfileId,
+    fetchSprintAdPack
 };
