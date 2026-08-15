@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS weekly_reviews (
     actual_tacos DECIMAL(10,2) DEFAULT NULL,
     decision ENUM('CONTINUE','MAINTENANCE','STOPPED') DEFAULT NULL,
     summary TEXT,
+    optimization_plan TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_sprint_week (sprint_id, week_start_date),

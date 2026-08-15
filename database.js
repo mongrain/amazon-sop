@@ -367,6 +367,7 @@ async function initDb() {
             actual_tacos DECIMAL(10,2) DEFAULT NULL,
             decision ENUM('CONTINUE','MAINTENANCE','STOPPED') DEFAULT NULL,
             summary TEXT,
+            optimization_plan TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uk_sprint_week (sprint_id, week_start_date),
@@ -376,6 +377,14 @@ async function initDb() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e) {
         // Silently skip
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE weekly_reviews ADD COLUMN optimization_plan TEXT AFTER summary`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
     }
 
     try {

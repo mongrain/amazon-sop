@@ -911,11 +911,15 @@ function registerProtectedPageApi(app, ctx) {
             if (!['PENDING', 'COMPLETED'].includes(status)) throw new Error('复盘状态不合法');
             if (!summary) throw new Error('复盘结论不能为空');
 
+            const optimization_plan = req.body.optimization_plan == null
+                ? ''
+                : String(req.body.optimization_plan);
+
             await runSql(
                 `UPDATE weekly_reviews SET
-                 actual_max_loss = ?, actual_tacos = ?, decision = ?, status = ?, summary = ?, updated_at = NOW()
+                 actual_max_loss = ?, actual_tacos = ?, decision = ?, status = ?, summary = ?, optimization_plan = ?, updated_at = NOW()
                  WHERE id = ?`,
-                [actual_max_loss, actual_tacos, decision, status, summary, id]
+                [actual_max_loss, actual_tacos, decision, status, summary, optimization_plan, id]
             );
 
             if (decision === 'MAINTENANCE') {
