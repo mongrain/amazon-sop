@@ -2,6 +2,10 @@ const assert = require('assert');
 const {
     toYmd,
     weekDateList,
+    ymdDiffDays,
+    currentSprintWeekStart,
+    isOnSprintWeekGrid,
+    planSprintReviewEnsure,
     buildWeekDays,
     datesToPull,
     countSkippedExisting,
@@ -24,6 +28,24 @@ assert.deepStrictEqual(weekDateList('2026-08-10'), [
     '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13',
     '2026-08-14', '2026-08-15', '2026-08-16'
 ]);
+
+assert.strictEqual(ymdDiffDays('2026-08-12', '2026-08-12'), 0);
+assert.strictEqual(ymdDiffDays('2026-08-12', '2026-08-19'), 7);
+assert.strictEqual(currentSprintWeekStart('2026-08-12', '2026-08-12'), '2026-08-12');
+assert.strictEqual(currentSprintWeekStart('2026-08-12', '2026-08-18'), '2026-08-12');
+assert.strictEqual(currentSprintWeekStart('2026-08-12', '2026-08-19'), '2026-08-19');
+assert.strictEqual(currentSprintWeekStart('2026-08-12', '2026-08-11'), null);
+assert.strictEqual(isOnSprintWeekGrid('2026-08-12', '2026-08-12'), true);
+assert.strictEqual(isOnSprintWeekGrid('2026-08-19', '2026-08-12'), true);
+assert.strictEqual(isOnSprintWeekGrid('2026-08-10', '2026-08-12'), false);
+
+const planned = planSprintReviewEnsure({
+    startYmd: '2026-08-12',
+    todayYmd: '2026-08-14',
+    pendingWeekStarts: ['2026-08-10', '2026-08-12']
+});
+assert.strictEqual(planned.currentStart, '2026-08-12');
+assert.deepStrictEqual(planned.deleteWeekStarts, ['2026-08-10']);
 
 const week = buildWeekDays('2026-08-10', '2026-08-14', [
     { record_date: '2026-08-10', orders: 3, ad_spend: 10, total_sales: 100, tacos: 10, impressions: 1000, clicks: 40 },

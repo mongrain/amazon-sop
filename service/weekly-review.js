@@ -26,6 +26,45 @@ function shiftYmd(ymd, days) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
+function ymdDiffDays(fromYmd, endYmd) {
+    const from = toYmd(fromYmd);
+    const to = toYmd(endYmd);
+    if (!from || !to) return null;
+    const a = new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, Number(from.slice(8, 10)));
+    const b = new Date(Number(to.slice(0, 4)), Number(to.slice(5, 7)) - 1, Number(to.slice(8, 10)));
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+function currentSprintWeekStart(startYmd, todayYmd) {
+    const start = toYmd(startYmd);
+    const today = toYmd(todayYmd);
+    if (!start || !today || today < start) return null;
+    const n = ymdDiffDays(start, today);
+    if (n == null) return null;
+    return shiftYmd(start, Math.floor(n / 7) * 7);
+}
+
+function isOnSprintWeekGrid(weekStartYmd, startYmd) {
+    const start = toYmd(startYmd);
+    const week = toYmd(weekStartYmd);
+    if (!start || !week || week < start) return false;
+    const n = ymdDiffDays(start, week);
+    return n != null && n % 7 === 0;
+}
+
+function planSprintReviewEnsure({ startYmd, todayYmd, pendingWeekStarts } = {}) {
+    const currentStart = currentSprintWeekStart(startYmd, todayYmd);
+    const deleteWeekStarts = [];
+    const seen = new Set();
+    for (const raw of pendingWeekStarts || []) {
+        const w = toYmd(raw);
+        if (!w || seen.has(w)) continue;
+        seen.add(w);
+        if (!isOnSprintWeekGrid(w, startYmd)) deleteWeekStarts.push(w);
+    }
+    return { currentStart, deleteWeekStarts };
+}
+
 function weekDateList(weekStartYmd) {
     const start = toYmd(weekStartYmd);
     const dates = [];
@@ -356,6 +395,10 @@ module.exports = {
     isEmptyField,
     toYmd,
     weekDateList,
+    ymdDiffDays,
+    currentSprintWeekStart,
+    isOnSprintWeekGrid,
+    planSprintReviewEnsure,
     buildWeekDays,
     datesToPull,
     countSkippedExisting,
