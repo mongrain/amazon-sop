@@ -32,7 +32,11 @@ const {
 } = require('./service/data-collection/asin/job-runner');
 const { resolveOperatingStartedAtFromManualDays } = require('./service/operating-days');
 const { siteToStation } = require('./service/get-sell-time');
-const { computeDerivedMetrics } = require('./service/weekly-review');
+const {
+    computeDerivedMetrics,
+    ensureSprintCurrentReview,
+    toYmd: toYmdReview
+} = require('./service/weekly-review');
 const sopData = require('./sop-data');
 const { upload: uploadToRemote } = require('./service/upload');
 const { compareStorefrontImages } = require('./gpt');
@@ -115,7 +119,6 @@ function getPageApiCtx() {
         updateSessionUser,
         ensureWeeklyReviewsForActiveSprints,
         toDateString,
-        getMondayStart,
         parseYmd,
         addDays,
         normalizeMonitorImageUrl,
@@ -243,12 +246,25 @@ async function setSetting(key, value) {
     );
 }
 
-async function ensureWeeklyReviewsForActiveSprints(weekStartStr) {
-    await runSql(
-        `INSERT IGNORE INTO weekly_reviews (sprint_id, week_start_date, status)
-         SELECT id, ?, 'PENDING' FROM sprint_projects WHERE status = 'ACTIVE'`,
-        [weekStartStr]
-    );
+async function ensureWeeklyReviewsForActiveSprints(todayYmd, sprintId) {
+    const today = String(todayYmd || '').trim();
+    if (!today) return;
+    const params = [];
+    let sql = "SELECT id, start_date FROM sprint_projects WHERE status = 'ACTIVE'";
+    if (sprintId) {
+        sql += ' AND id = ?';
+        params.push(sprintId);
+    }
+    const sprints = await queryAll(sql, params);
+    for (const sp of sprints || []) {
+        await ensureSprintCurrentReview({
+            sprintId: sp.id,
+            startYmd: toYmdReview(sp.start_date),
+            todayYmd: today,
+            queryAll,
+            runSql
+        });
+    }
 }
 
 async function ensureInsight(asin, recordDateStr, insightType, message) {
@@ -1406,12 +1422,7 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
 async function schedulerTick() {
     if (!dbReady) return;
     const now = new Date();
-    const weekStartStr = toDateString(getMondayStart(now));
-    const currentWeekKey = await getSetting('weekly_review_generated_week', '');
-    if (currentWeekKey !== weekStartStr) {
-        await ensureWeeklyReviewsForActiveSprints(weekStartStr);
-        await setSetting('weekly_review_generated_week', weekStartStr);
-    }
+    await ensureWeeklyReviewsForActiveSprints(toDateString(now));
 }
 
 setInterval(() => {

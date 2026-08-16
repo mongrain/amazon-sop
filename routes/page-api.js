@@ -117,7 +117,6 @@ function registerProtectedPageApi(app, ctx) {
         updateSessionUser,
         ensureWeeklyReviewsForActiveSprints,
         toDateString,
-        getMondayStart,
         parseYmd,
         addDays,
         normalizeMonitorImageUrl,
@@ -676,6 +675,7 @@ function registerProtectedPageApi(app, ctx) {
             numOrNull(body.fba_warehouse_qty)
         ];
 
+        let sprintId = id || null;
         if (id) {
             await runSql(
                 `UPDATE sprint_projects SET
@@ -690,7 +690,7 @@ function registerProtectedPageApi(app, ctx) {
                 [asin, ...values, id]
             );
         } else {
-            await runSql(
+            const result = await runSql(
                 `INSERT INTO sprint_projects
                  (asin, owner_id, status, start_date, end_date, target_cycle_days,
                   current_daily_orders, target_daily_orders, current_rank, target_rank,
@@ -701,6 +701,10 @@ function registerProtectedPageApi(app, ctx) {
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [asin, ...values]
             );
+            sprintId = result && result.insertId;
+        }
+        if (status === 'ACTIVE' && sprintId) {
+            await ensureWeeklyReviewsForActiveSprints(toDateString(new Date()), sprintId);
         }
     }
 
@@ -729,8 +733,7 @@ function registerProtectedPageApi(app, ctx) {
         try {
             const sprint_id = req.query.sprint_id ? Number(req.query.sprint_id) : null;
             const status = String(req.query.status || '').trim();
-            const weekStartStr = toDateString(getMondayStart(new Date()));
-            await ensureWeeklyReviewsForActiveSprints(weekStartStr);
+            await ensureWeeklyReviewsForActiveSprints(toDateString(new Date()));
 
             const where = ['1=1'];
             const params = [];
