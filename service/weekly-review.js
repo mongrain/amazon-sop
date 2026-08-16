@@ -65,6 +65,29 @@ function planSprintReviewEnsure({ startYmd, todayYmd, pendingWeekStarts } = {}) 
     return { currentStart, deleteWeekStarts };
 }
 
+async function ensureSprintCurrentReview({ sprintId, startYmd, todayYmd, queryAll, runSql }) {
+    const rows = await queryAll(
+        'SELECT week_start_date FROM weekly_reviews WHERE sprint_id = ? AND status = ?',
+        [sprintId, 'PENDING']
+    );
+    const pendingWeekStarts = (rows || []).map((r) => r && r.week_start_date);
+    const { currentStart, deleteWeekStarts } = planSprintReviewEnsure({
+        startYmd, todayYmd, pendingWeekStarts
+    });
+    for (const date of deleteWeekStarts) {
+        await runSql(
+            'DELETE FROM weekly_reviews WHERE sprint_id = ? AND status = ? AND week_start_date = ?',
+            [sprintId, 'PENDING', date]
+        );
+    }
+    if (currentStart) {
+        await runSql(
+            'INSERT IGNORE INTO weekly_reviews (sprint_id, week_start_date, status) VALUES (?, ?, ?)',
+            [sprintId, currentStart, 'PENDING']
+        );
+    }
+}
+
 function weekDateList(weekStartYmd) {
     const start = toYmd(weekStartYmd);
     const dates = [];
@@ -399,6 +422,7 @@ module.exports = {
     currentSprintWeekStart,
     isOnSprintWeekGrid,
     planSprintReviewEnsure,
+    ensureSprintCurrentReview,
     buildWeekDays,
     datesToPull,
     countSkippedExisting,

@@ -6,6 +6,7 @@ const {
     currentSprintWeekStart,
     isOnSprintWeekGrid,
     planSprintReviewEnsure,
+    ensureSprintCurrentReview,
     buildWeekDays,
     datesToPull,
     countSkippedExisting,
@@ -160,4 +161,32 @@ assert.strictEqual(payload.sprint.sprint_goal, '冲量');
 assert.strictEqual(payload.week.days.length, 7);
 assert.strictEqual(payload.suggestion.decision, 'CONTINUE');
 
-console.log('ok');
+(async () => {
+    const sqls = [];
+    await ensureSprintCurrentReview({
+        sprintId: 12,
+        startYmd: '2026-08-12',
+        todayYmd: '2026-08-14',
+        queryAll: async () => [
+            { week_start_date: '2026-08-10' },
+            { week_start_date: '2026-08-12' }
+        ],
+        runSql: async (sql, params) => { sqls.push({ sql, params }); }
+    });
+    assert.ok(sqls.some((s) => String(s.sql).includes('DELETE') && s.params[2] === '2026-08-10'));
+    assert.ok(!sqls.some((s) => String(s.sql).includes('DELETE') && s.params[2] === '2026-08-12'));
+    assert.ok(sqls.some((s) => String(s.sql).includes('INSERT IGNORE') && s.params[1] === '2026-08-12'));
+
+    const none = [];
+    await ensureSprintCurrentReview({
+        sprintId: 12,
+        startYmd: '2026-08-20',
+        todayYmd: '2026-08-14',
+        queryAll: async () => [{ week_start_date: '2026-08-10' }],
+        runSql: async (sql, params) => { none.push({ sql, params }); }
+    });
+    assert.ok(none.some((s) => String(s.sql).includes('DELETE')));
+    assert.ok(!none.some((s) => String(s.sql).includes('INSERT')));
+
+    console.log('ok');
+})().catch((e) => { console.error(e); process.exit(1); });
