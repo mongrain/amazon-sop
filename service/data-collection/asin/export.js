@@ -2,6 +2,13 @@ const XLSX = require('xlsx');
 const { queryAll } = require('../../../database');
 const { buildColumnLabels } = require('./column-labels');
 
+const EXPORT_COLUMNS = [
+    '_crawl_asin',
+    'product.title',
+    'product.feature_bullets',
+    'product.buybox.price.value'
+];
+
 function buildExportFilename(asins, ext = 'xlsx') {
     const list = (asins || []).map(a => String(a || '').trim().toUpperCase()).filter(Boolean);
     const suffix = ext.startsWith('.') ? ext : `.${ext}`;
@@ -20,34 +27,22 @@ async function buildExportData(jobId) {
         [Number(jobId)]
     );
     const asins = items.map(item => item.asin);
-
-    if (!items.length) {
-        const columns = ['_crawl_asin'];
-        return {
-            columns,
-            rows: [],
-            columnLabels: buildColumnLabels(columns),
-            asins
-        };
-    }
+    const columns = [...EXPORT_COLUMNS];
+    const columnLabels = buildColumnLabels(columns);
 
     const rows = items.map(item => {
         const flat = typeof item.flat_json === 'string'
             ? JSON.parse(item.flat_json)
             : (item.flat_json || {});
-        return { _crawl_asin: item.asin, ...flat };
+        const row = { _crawl_asin: item.asin };
+        for (const col of columns) {
+            if (col === '_crawl_asin') continue;
+            const value = flat[col];
+            row[col] = value == null ? '' : value;
+        }
+        return row;
     });
 
-    const columnSet = new Set(['_crawl_asin']);
-    for (const row of rows) {
-        Object.keys(row).forEach(k => columnSet.add(k));
-    }
-    const columns = [...columnSet].sort((a, b) => {
-        if (a === '_crawl_asin') return -1;
-        if (b === '_crawl_asin') return 1;
-        return a.localeCompare(b);
-    });
-    const columnLabels = buildColumnLabels(columns);
     return { columns, rows, columnLabels, asins };
 }
 
@@ -99,6 +94,7 @@ async function exportJobToJson(jobId) {
 }
 
 module.exports = {
+    EXPORT_COLUMNS,
     buildExportFilename,
     buildExportData,
     buildWorkbook,
