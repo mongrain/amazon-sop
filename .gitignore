@@ -3,5 +3,4 @@ node_modules
 dist
 data/
 config/proxies.json
-
 .worktrees/

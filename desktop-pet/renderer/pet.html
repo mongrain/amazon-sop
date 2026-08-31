@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小只工作宠物</title>
+    <link rel="stylesheet" href="./pet.css">
+</head>
+<body>
+    <div class="pet-shell">
+        <button id="petBtn" class="pet-button" type="button" aria-label="打开工作聊天框">
+            <span class="pet-shadow"></span>
+            <svg class="pet-svg" viewBox="0 0 180 190" aria-hidden="true">
+                <path
+                    d="M23 168 C23 168 11 171 2 163 C1 156 6 151 15 149 C20 148 28 149 34 151 Z"
+                    fill="#d9e6c8"
+                />
+                <path
+                    d="M157 167 C157 167 169 171 178 163 C179 156 174 151 165 149 C160 148 152 149 146 151 Z"
+                    fill="#d9e6c8"
+                />
+
+                <ellipse cx="90" cy="176" rx="54" ry="8" fill="rgba(83, 109, 64, 0.18)" />
+
+                <path
+                    d="M52 150
+                       C50 123 52 108 58 99
+                       C64 91 74 87 90 87
+                       C106 87 116 91 122 99
+                       C128 108 130 123 128 150
+                       C126 167 116 176 90 178
+                       C64 176 54 167 52 150 Z"
+                    fill="#ffffff"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+
+                <path
+                    d="M33 79
+                       C18 66 14 42 22 24
+                       C30 10 46 7 61 14
+                       L72 1
+                       C75 -1 80 0 82 4
+                       L90 19
+                       L98 4
+                       C100 0 105 -1 108 1
+                       L119 14
+                       C134 7 150 10 158 24
+                       C166 42 162 66 147 79
+                       C136 89 119 95 90 96
+                       C61 95 44 89 33 79 Z"
+                    fill="#ffffff"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+                <path
+                    d="M30 49
+                       C40 22 55 12 67 17
+                       C75 20 81 33 84 49
+                       C72 56 48 57 30 49 Z"
+                    fill="#7fb8dd"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+                <path
+                    d="M150 49
+                       C132 57 108 56 96 49
+                       C99 33 105 20 113 17
+                       C125 12 140 22 150 49 Z"
+                    fill="#7fb8dd"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+                <path
+                    d="M58 46
+                       C68 51 78 54 90 54
+                       C102 54 112 51 122 46
+                       C117 34 106 26 90 26
+                       C74 26 63 34 58 46 Z"
+                    fill="#7fb8dd"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+
+                <path
+                    d="M48 113
+                       C40 113 37 120 38 128
+                       C39 136 42 142 47 146
+                       C51 141 53 134 53 126
+                       C53 119 51 115 48 113 Z"
+                    fill="#ffffff"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+                <path
+                    d="M132 113
+                       C129 115 127 119 127 126
+                       C127 134 129 141 133 146
+                       C138 142 141 136 142 128
+                       C143 120 140 113 132 113 Z"
+                    fill="#ffffff"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+
+                <path
+                    d="M62 154
+                       C58 161 57 172 60 182
+                       C64 183 67 181 69 177
+                       C69 168 68 160 66 154 Z"
+                    fill="#ffffff"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+                <path
+                    d="M114 154
+                       C112 160 111 168 111 177
+                       C113 181 116 183 120 182
+                       C123 172 122 161 118 154 Z"
+                    fill="#ffffff"
+                    stroke="#4f2a23"
+                    stroke-width="6"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                />
+
+                <ellipse cx="67" cy="79" rx="3.4" ry="2.4" fill="#4f2a23" />
+                <ellipse cx="113" cy="79" rx="3.4" ry="2.4" fill="#4f2a23" />
+
+                <ellipse cx="68" cy="100" rx="12" ry="15" fill="#4f2a23" />
+                <ellipse cx="112" cy="100" rx="12" ry="15" fill="#4f2a23" />
+                <ellipse cx="71" cy="92" rx="4.8" ry="4.8" fill="#ffffff" />
+                <ellipse cx="115" cy="92" rx="4.8" ry="4.8" fill="#ffffff" />
+                <ellipse cx="66" cy="104" rx="6.8" ry="5.8" fill="#ffffff" />
+                <ellipse cx="110" cy="104" rx="6.8" ry="5.8" fill="#ffffff" />
+
+                <ellipse cx="42" cy="111" rx="14" ry="11" fill="#f6c7d3" />
+                <ellipse cx="138" cy="111" rx="14" ry="11" fill="#f6c7d3" />
+                <path d="M33 106 L30 114" stroke="#4f2a23" stroke-width="4" stroke-linecap="round" />
+                <path d="M41 105 L38 115" stroke="#4f2a23" stroke-width="4" stroke-linecap="round" />
+                <path d="M49 106 L46 114" stroke="#4f2a23" stroke-width="4" stroke-linecap="round" />
+                <path d="M131 106 L128 114" stroke="#4f2a23" stroke-width="4" stroke-linecap="round" />
+                <path d="M139 105 L136 115" stroke="#4f2a23" stroke-width="4" stroke-linecap="round" />
+                <path d="M147 106 L144 114" stroke="#4f2a23" stroke-width="4" stroke-linecap="round" />
+
+                <ellipse cx="90" cy="113" rx="2.8" ry="2.2" fill="#4f2a23" />
+                <path d="M90 113 L90 118" fill="none" stroke="#4f2a23" stroke-width="4.5" stroke-linecap="round" />
+                <path d="M84 118 C86 122 89 123 90 123" fill="none" stroke="#4f2a23" stroke-width="4.5" stroke-linecap="round" />
+                <path d="M96 118 C94 122 91 123 90 123" fill="none" stroke="#4f2a23" stroke-width="4.5" stroke-linecap="round" />
+                <ellipse cx="90" cy="129" rx="3" ry="2.1" fill="#4f2a23" />
+            </svg>
+            <span id="petDot" class="pet-dot hidden"></span>
+        </button>
+        <div id="petBubble" class="pet-bubble">点我记工作呀</div>
+    </div>
+
+    <script src="./pet.js"></script>
+</body>
+</html>

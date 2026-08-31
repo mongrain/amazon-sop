@@ -3,13 +3,15 @@ const {
     ensureEconomicsForProduct,
     updateProductEconomics
 } = require('../product-economics');
-const { queryProductPerformanceAll, LINGXING_SID_50_US } = require('../service/lingxing-fetch');
+const { queryProductPerformanceAll, querySprintAdMetricsByAsin, LINGXING_SID_50_US } = require('../service/lingxing-fetch');
 const {
     METRIC_KEYS,
     mapPerformanceRow,
     asinsToPrefill,
     lookupFromPerformanceRow,
-    previousCompleteDay
+    previousCompleteDay,
+    resolveMetricsPullRange,
+    overlaySprintAdMetrics
 } = require('../service/lingxing-metrics');
 const {
     assembleReviewPayload,
@@ -986,7 +988,7 @@ function registerProtectedPageApi(app, ctx) {
                 "SELECT id, asin FROM sprint_projects WHERE status IN ('ACTIVE','MAINTENANCE') ORDER BY id DESC"
             );
             const metrics = await queryAll(
-                `SELECT asin, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, tacos
+                `SELECT asin, sessions, orders, impressions, ad_impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, tacos
                  FROM daily_asin_metrics WHERE record_date = ?`,
                 [dateStr]
             );
@@ -1002,6 +1004,7 @@ function registerProtectedPageApi(app, ctx) {
                     sessions: metricOrNull(saved.sessions),
                     orders: metricOrNull(saved.orders),
                     impressions: metricOrNull(saved.impressions),
+                    ad_impressions: metricOrNull(saved.ad_impressions),
                     clicks: metricOrNull(saved.clicks),
                     ad_spend: metricOrNull(saved.ad_spend),
                     ad_sales: metricOrNull(saved.ad_sales),
@@ -1043,18 +1046,28 @@ function registerProtectedPageApi(app, ctx) {
                     missing_in_lingxing: 0
                 });
             }
-            const range = previousCompleteDay(dateStr);
-            const list = await queryProductPerformanceAll({
-                startDate: range.start_date,
-                endDate: range.end_date,
-                asins: need,
-                sids: LINGXING_SID_50_US
-            });
+            const range = resolveMetricsPullRange(dateStr);
+            const [list, adByAsin] = await Promise.all([
+                queryProductPerformanceAll({
+                    startDate: range.start_date,
+                    endDate: range.end_date,
+                    asins: need,
+                    sids: LINGXING_SID_50_US
+                }),
+                querySprintAdMetricsByAsin({
+                    startDate: range.start_date,
+                    endDate: range.end_date,
+                    asins: need
+                })
+            ]);
             const needSet = new Set(need.map((asin) => asin.toUpperCase()));
             const rows = [];
             const found = new Set();
             for (const item of list) {
-                const mapped = mapPerformanceRow(item);
+                const mapped = overlaySprintAdMetrics(
+                    mapPerformanceRow(item),
+                    adByAsin.get(String((item && item.asin) || '').trim().toUpperCase())
+                );
                 const key = String(mapped.asin || '').trim().toUpperCase();
                 if (!key || !needSet.has(key) || found.has(key)) continue;
                 found.add(key);

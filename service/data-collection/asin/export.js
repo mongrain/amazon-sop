@@ -27,15 +27,6 @@ async function buildExportData(jobId) {
     const columns = getExportColumnKeys();
     const columnLabels = getExportColumnLabels();
 
-    if (!items.length) {
-        return {
-            columns,
-            rows: [],
-            columnLabels,
-            asins
-        };
-    }
-
     const rows = items.map(item => {
         const flat = typeof item.flat_json === 'string'
             ? JSON.parse(item.flat_json)

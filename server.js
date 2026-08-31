@@ -1339,6 +1339,7 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
             const sessions = row.sessions !== undefined ? Number(row.sessions) : null;
             const orders = row.orders !== undefined ? Number(row.orders) : null;
             const impressions = row.impressions !== undefined ? Number(row.impressions) : null;
+            const ad_impressions = row.ad_impressions !== undefined ? Number(row.ad_impressions) : null;
             const clicks = row.clicks !== undefined ? Number(row.clicks) : null;
             const ad_spend = row.ad_spend !== undefined ? Number(row.ad_spend) : null;
             const ad_sales = row.ad_sales !== undefined ? Number(row.ad_sales) : null;
@@ -1367,13 +1368,14 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
 
             await runSql(
                 `INSERT INTO daily_asin_metrics
-                 (asin, record_date, data_source, sessions, orders, impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, acos, tacos, ctr, cvr)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 (asin, record_date, data_source, sessions, orders, impressions, ad_impressions, clicks, ad_spend, ad_sales, total_sales, ad_orders, core_kw_rank, bsr_rank, acos, tacos, ctr, cvr)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE
                  data_source = VALUES(data_source),
                  sessions = VALUES(sessions),
                  orders = VALUES(orders),
                  impressions = VALUES(impressions),
+                 ad_impressions = VALUES(ad_impressions),
                  clicks = VALUES(clicks),
                  ad_spend = VALUES(ad_spend),
                  ad_sales = VALUES(ad_sales),
@@ -1393,6 +1395,7 @@ app.post('/api/v1/metrics/upload', async (req, res) => {
                     sessions !== null && Number.isFinite(sessions) ? Math.trunc(sessions) : null,
                     orders !== null && Number.isFinite(orders) ? Math.trunc(orders) : null,
                     impressions !== null && Number.isFinite(impressions) ? Math.trunc(impressions) : null,
+                    ad_impressions !== null && Number.isFinite(ad_impressions) ? Math.trunc(ad_impressions) : null,
                     clicks !== null && Number.isFinite(clicks) ? Math.trunc(clicks) : null,
                     ad_spend !== null && Number.isFinite(ad_spend) ? ad_spend : null,
                     ad_sales !== null && Number.isFinite(ad_sales) ? ad_sales : null,
