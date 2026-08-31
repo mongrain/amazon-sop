@@ -212,6 +212,7 @@ CREATE TABLE IF NOT EXISTS daily_asin_metrics (
     sessions INT DEFAULT NULL,
     orders INT DEFAULT NULL,
     impressions INT DEFAULT NULL,
+    ad_impressions INT DEFAULT NULL COMMENT '广告展示量',
     clicks INT DEFAULT NULL,
     ad_spend DECIMAL(12,2) DEFAULT NULL,
     ad_sales DECIMAL(12,2) DEFAULT NULL,

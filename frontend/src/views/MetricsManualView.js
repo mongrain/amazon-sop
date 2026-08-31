@@ -1,11 +1,11 @@
 import { onMounted, ref, watch } from 'vue';
 import { getApiError, http } from '@/utils/index.js';
 
-const METRIC_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'tacos', 'ad_orders', 'core_kw_rank', 'bsr_rank'];
-const PULL_KEYS = ['sessions', 'orders', 'impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'tacos', 'ad_orders', 'bsr_rank'];
+const METRIC_KEYS = ['sessions', 'orders', 'impressions', 'ad_impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'tacos', 'ad_orders', 'core_kw_rank', 'bsr_rank'];
+const PULL_KEYS = ['sessions', 'orders', 'impressions', 'ad_impressions', 'clicks', 'ad_spend', 'ad_sales', 'total_sales', 'tacos', 'ad_orders', 'bsr_rank'];
 
 function emptyRow(prefillId, asin) {
-    return { id: prefillId || '-', asin: asin || '', sessions: '', orders: '', impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', tacos: '', ad_orders: '', core_kw_rank: '', bsr_rank: '' };
+    return { id: prefillId || '-', asin: asin || '', sessions: '', orders: '', impressions: '', ad_impressions: '', clicks: '', ad_spend: '', ad_sales: '', total_sales: '', tacos: '', ad_orders: '', core_kw_rank: '', bsr_rank: '' };
 }
 
 function rowFromApi(r) {
@@ -191,7 +191,7 @@ export default {
                         <span style="font-size:13px; color:#606266;">{{ submitMsg }}</span>
                     </div>
                     <div style="font-size:12px; color:#909399; margin-top:8px;">
-                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / TACOS(%) / 广告订单数(ad_orders) / BSR排名(bsr_rank)
+                        支持字段：访客数(sessions) / 订单数(orders) / 曝光(impressions) / 广告展示量(ad_impressions) / 点击(clicks) / 广告花费(ad_spend) / 广告销售额(ad_sales) / 总销售额(total_sales) / TACOS(%) / 广告订单数(ad_orders) / BSR排名(bsr_rank)
                     </div>
                 </div>
             </div>
@@ -205,6 +205,7 @@ export default {
                             <th style="min-width:90px" title="sessions">访客数</th>
                             <th style="min-width:80px" title="orders">订单数</th>
                             <th style="min-width:110px" title="impressions">曝光</th>
+                            <th style="min-width:110px" title="ad_impressions，C冲刺广告的分组">广告展示量</th>
                             <th style="min-width:90px" title="clicks">点击</th>
                             <th style="min-width:110px" title="ad_spend">广告花费</th>
                             <th style="min-width:110px" title="ad_sales">广告销售额</th>
@@ -222,6 +223,7 @@ export default {
                             <td><input v-model="row.sessions" class="search-input" style="width:90px"></td>
                             <td><input v-model="row.orders" class="search-input" style="width:80px"></td>
                             <td><input v-model="row.impressions" class="search-input" style="width:110px"></td>
+                            <td><input v-model="row.ad_impressions" class="search-input" style="width:110px"></td>
                             <td><input v-model="row.clicks" class="search-input" style="width:90px"></td>
                             <td><input v-model="row.ad_spend" class="search-input" style="width:110px" @input="onSpendOrSalesInput(row)"></td>
                             <td><input v-model="row.ad_sales" class="search-input" style="width:110px"></td>

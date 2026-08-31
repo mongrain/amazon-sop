@@ -396,6 +396,7 @@ async function initDb() {
             sessions INT DEFAULT NULL,
             orders INT DEFAULT NULL,
             impressions INT DEFAULT NULL,
+            ad_impressions INT DEFAULT NULL COMMENT '广告展示量',
             clicks INT DEFAULT NULL,
             ad_spend DECIMAL(12,2) DEFAULT NULL,
             ad_sales DECIMAL(12,2) DEFAULT NULL,
@@ -415,6 +416,14 @@ async function initDb() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e) {
         // Silently skip
+    }
+
+    try {
+        await p.query(
+            `ALTER TABLE daily_asin_metrics ADD COLUMN ad_impressions INT DEFAULT NULL COMMENT '广告展示量' AFTER impressions`
+        );
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
     }
 
     try {
