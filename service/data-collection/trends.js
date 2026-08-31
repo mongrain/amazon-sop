@@ -151,6 +151,7 @@ async function fetchTrendsBatchFromScraperApi(keywords, interval, geo) {
                     data: dataPoints
                 });
             }
+            await tokenPool.recordTokenSuccess(token.id);
             return resultMap;
         } catch (error) {
             lastError = formatRequestError(error);

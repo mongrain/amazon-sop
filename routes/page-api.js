@@ -1926,9 +1926,11 @@ function registerProtectedPageApi(app, ctx) {
                 tokensText,
                 label: body.label
             });
+            const inputCount = tokenPool.parseTokenInput(tokensText).length;
             res.json({
                 tokens: added,
                 added_count: added.length,
+                skipped_count: inputCount - added.length,
                 token: added.length === 1 ? added[0] : undefined
             });
         } catch (e) {

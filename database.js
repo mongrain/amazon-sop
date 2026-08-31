@@ -777,13 +777,27 @@ async function initDb() {
             label VARCHAR(100) DEFAULT NULL,
             status ENUM('active','exhausted','disabled') NOT NULL DEFAULT 'active',
             last_used_at DATETIME DEFAULT NULL,
+            success_count INT NOT NULL DEFAULT 0,
             fail_count INT NOT NULL DEFAULT 0,
             last_error VARCHAR(500) DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_token (token),
             INDEX idx_status (status),
             INDEX idx_last_used (last_used_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE searchapi_tokens ADD COLUMN success_count INT NOT NULL DEFAULT 0 AFTER last_used_at');
+    } catch (e) {
+        if (!isSafeMigrationError(e)) {}
+    }
+
+    try {
+        await p.query('ALTER TABLE searchapi_tokens ADD UNIQUE KEY uk_token (token)');
     } catch (e) {
         if (!isSafeMigrationError(e)) {}
     }

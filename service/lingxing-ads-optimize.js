@@ -218,6 +218,7 @@ function shopListFromPayload(payload) {
     const fromPerf = extractPerformanceList(payload);
     if (fromPerf.length) return fromPerf;
     const candidates = [
+        payload && payload.data && payload.data.data,
         payload && payload.data,
         payload && payload.list,
         payload && payload.shops

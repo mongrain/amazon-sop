@@ -313,7 +313,9 @@ export default {
                 tokenForm.token = '';
                 tokenForm.label = '';
                 await loadTokens();
-                if (data.added_count > 1) {
+                if (data.skipped_count && data.added_count) {
+                    successMessage.value = `已成功添加 ${data.added_count} 个 Token，跳过 ${data.skipped_count} 个重复 Token`;
+                } else if (data.added_count > 1) {
                     successMessage.value = `已成功添加 ${data.added_count} 个 Token`;
                 }
             } catch (e) {
@@ -587,17 +589,19 @@ export default {
                                         <th>备注</th>
                                         <th>Token</th>
                                         <th>状态</th>
+                                        <th>成功次数</th>
                                         <th>失败次数</th>
                                         <th>最后使用</th>
                                         <th>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-if="!tokens.length"><td colspan="6" style="text-align:center;color:#909399;">暂无 Token</td></tr>
+                                    <tr v-if="!tokens.length"><td colspan="7" style="text-align:center;color:#909399;">暂无 Token</td></tr>
                                     <tr v-for="token in tokens" :key="token.id">
                                         <td>{{ token.label || '—' }}</td>
                                         <td><code>{{ token.token_masked }}</code></td>
                                         <td><span class="status-badge" :class="statusClass(token.status)">{{ statusLabel(token.status) }}</span></td>
+                                        <td>{{ token.success_count || 0 }}</td>
                                         <td>{{ token.fail_count }}</td>
                                         <td>{{ token.last_used_at || '—' }}</td>
                                         <td style="white-space:nowrap;">

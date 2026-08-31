@@ -83,6 +83,18 @@ assert.ok(trimmed.search_terms.some((s) => s.name === 'q1'));
 assert.strictEqual(resolveUs50ProfileId({
     list: [{ sid: '17438', profile_id: 99, country: 'US', name: '50宴君' }]
 }), 99);
+assert.strictEqual(resolveUs50ProfileId({
+    code: 0,
+    data: {
+        data: [{
+            sid: 17438,
+            store_id: 2979881167,
+            country: 'US',
+            alias: '50宴君北美站-US',
+            profile_id: '3911921794447440'
+        }]
+    }
+}), 3911921794447440);
 assert.strictEqual(resolveUs50ProfileId({ list: [] }), null);
 
 (async () => {

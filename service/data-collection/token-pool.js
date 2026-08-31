@@ -13,6 +13,7 @@ function mapTokenRow(row) {
         token_masked: maskToken(row.token),
         label: row.label || '',
         status: row.status,
+        success_count: Number(row.success_count || 0),
         fail_count: row.fail_count,
         last_used_at: row.last_used_at,
         last_error: row.last_error,
@@ -41,19 +42,50 @@ function parseTokenInput(text) {
     return tokens;
 }
 
+function splitNewAndDuplicateTokens(list, existingTokens) {
+    const existing = new Set(existingTokens || []);
+    const fresh = [];
+    const duplicates = [];
+    for (const token of list) {
+        if (existing.has(token)) {
+            duplicates.push(token);
+            continue;
+        }
+        existing.add(token);
+        fresh.push(token);
+    }
+    return { fresh, duplicates };
+}
+
 async function addTokens({ tokensText, label }) {
     const list = parseTokenInput(tokensText);
     if (!list.length) throw new Error('token 不能为空');
+    const placeholders = list.map(() => '?').join(', ');
+    const existingRows = await queryAll(
+        `SELECT token FROM searchapi_tokens WHERE token IN (${placeholders})`,
+        list
+    );
+    const { fresh } = splitNewAndDuplicateTokens(list, existingRows.map(row => row.token));
+    if (!fresh.length) throw new Error('token 已存在，禁止重复录入');
     const sharedLabel = label ? String(label).trim() : null;
     const added = [];
-    for (const text of list) {
-        const result = await runSql(
-            `INSERT INTO searchapi_tokens (token, label, status) VALUES (?, ?, 'active')`,
-            [text, sharedLabel]
-        );
+    for (const text of fresh) {
+        let result;
+        try {
+            result = await runSql(
+                `INSERT INTO searchapi_tokens (token, label, status) VALUES (?, ?, 'active')`,
+                [text, sharedLabel]
+            );
+        } catch (error) {
+            if (String(error.message || '').includes('Duplicate')) {
+                continue;
+            }
+            throw error;
+        }
         const row = await queryOne('SELECT * FROM searchapi_tokens WHERE id = ?', [result.insertId]);
         added.push(mapTokenRow(row));
     }
+    if (!added.length) throw new Error('token 已存在，禁止重复录入');
     return added;
 }
 
@@ -115,6 +147,15 @@ async function markTokenExhausted(id, error) {
     );
 }
 
+async function recordTokenSuccess(id) {
+    await runSql(
+        `UPDATE searchapi_tokens
+         SET success_count = success_count + 1, updated_at = NOW()
+         WHERE id = ?`,
+        [Number(id)]
+    );
+}
+
 async function recordTokenFailure(id, error) {
     const message = String(error || '').slice(0, 500);
     await runSql(
@@ -134,6 +175,8 @@ async function recordTokenFailure(id, error) {
 module.exports = {
     maskToken,
     parseTokenInput,
+    splitNewAndDuplicateTokens,
+    mapTokenRow,
     listTokens,
     addToken,
     addTokens,
@@ -142,6 +185,7 @@ module.exports = {
     countActiveTokens,
     acquireToken,
     markTokenExhausted,
+    recordTokenSuccess,
     recordTokenFailure,
     touchTokenUsed
 };

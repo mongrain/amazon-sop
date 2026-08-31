@@ -222,6 +222,7 @@ async function executeItem(item) {
                 const flat = flattenForCsv(rawData);
                 await asinCache.setTodayCache(item.asin, item.amazon_domain, rawData, flat);
                 await markItemSuccess(item.id, item.job_id, token.id, rawData);
+                await tokenPool.recordTokenSuccess(token.id);
                 await finalizeJobIfDone(item.job_id);
                 return;
             } catch (error) {
