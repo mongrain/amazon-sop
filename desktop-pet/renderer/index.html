@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小只工作宠物聊天框</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body class="chat-body">
+    <div class="chat-shell">
+        <div class="chat-card">
+            <header class="chat-header drag">
+                <div>
+                    <div class="chat-title">吉伊卡哇来问问你</div>
+                    <div class="chat-subtitle" id="chatSubtitle">等待提醒</div>
+                </div>
+                <button id="closeChatBtn" class="chat-close no-drag" type="button">收起</button>
+            </header>
+
+            <main class="chat-main">
+                <div class="bubble-row">
+                    <div class="avatar-badge">吉</div>
+                    <div class="bubble bubble-pet" id="questionBubble">点我也可以主动记一下今天的多个任务，还有每个任务的进度呀。</div>
+                </div>
+
+                <div class="quick-tabs" id="quickTabs"></div>
+
+                <section class="answer-panel">
+                    <label id="answerLabel" class="answer-label" for="answerInput">记录一条任务</label>
+                    <div class="field-row">
+                        <label class="field-label" for="timeInput">时间</label>
+                        <input id="timeInput" class="time-input" type="time">
+                        <div class="time-shortcuts">
+                            <button id="timeShortcut1230" class="time-shortcut-btn" type="button">上午 12:30</button>
+                            <button id="timeShortcut1830" class="time-shortcut-btn" type="button">下午 18:30</button>
+                        </div>
+                    </div>
+                    <div class="field-row field-row-column">
+                        <label class="field-label" for="answerInput">内容</label>
+                        <textarea id="answerInput" class="answer-input" placeholder=""></textarea>
+                    </div>
+                    <div class="answer-actions">
+                        <span id="saveHint" class="save-hint"></span>
+                        <div class="action-buttons">
+                            <button id="newEntryBtn" class="ghost-btn" type="button">新建一条</button>
+                            <button id="saveBtn" class="save-btn" type="button">保存</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="history-card">
+                    <div class="history-title">今天已经记下来的任务</div>
+                    <div class="summary-actions">
+                        <button id="generateSummaryBtn" class="ghost-btn" type="button">生成今日总结</button>
+                        <button id="copySummaryBtn" class="save-btn" type="button">复制总结</button>
+                    </div>
+                    <div id="summaryHint" class="summary-hint"></div>
+                    <section id="summaryPanel" class="summary-panel hidden">
+                        <div class="summary-panel-title">今日总结表格</div>
+                        <div id="summaryTableWrap" class="summary-table-wrap"></div>
+                    </section>
+                    <div id="taskList" class="task-list"></div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="./renderer.js"></script>
+</body>
+</html>
