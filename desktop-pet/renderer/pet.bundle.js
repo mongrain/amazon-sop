@@ -32502,14 +32502,23 @@ void main() {
   var clickTimer = null;
   var petModel = null;
   var walkDirection = "left";
+  var animBobY = 0;
+  var animRotX = 0;
+  var animRotZ = 0;
+  var animRotY = 0;
   function showPetError(message) {
     console.error(message);
     els.petStatus.textContent = "\u6A21\u578B\u52A0\u8F7D\u5931\u8D25";
     els.petStatus.hidden = false;
   }
   function startThreePet() {
-    const renderer = new WebGLRenderer({ canvas: els.petCanvas, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new WebGLRenderer({
+      canvas: els.petCanvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance"
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0, 0);
     renderer.outputColorSpace = SRGBColorSpace;
     const scene = new Scene();
@@ -32541,13 +32550,21 @@ void main() {
       }
       if (petModel) {
         const walking = state.isMoving && !state.isDragging && !state.isHovering && !state.isChatOpen;
-        petModel.position.y = walking ? Math.abs(Math.sin(now * 8e-3)) * 0.028 : 0;
-        const walkingTurn = MathUtils.degToRad(15);
+        const gait = now * 275e-5;
+        const targetBob = walking ? Math.abs(Math.sin(now * 35e-4)) * 0.022 : 0;
+        const walkingTurn = MathUtils.degToRad(12);
         const targetTurn = walking ? walkDirection === "right" ? walkingTurn : -walkingTurn : 0;
-        petModel.rotation.y = MathUtils.lerp(petModel.rotation.y, targetTurn, 0.05);
-        const gait = now * 6e-3;
-        petModel.rotation.x = walking ? Math.sin(gait * 1.7) * 0.075 : 0;
-        petModel.rotation.z = walking ? Math.sin(gait) * 0.055 : 0;
+        const targetRotX = walking ? Math.sin(gait * 1.7) * 0.055 : 0;
+        const targetRotZ = walking ? Math.sin(gait) * 0.04 : 0;
+        const ease = walking ? 0.12 : 0.18;
+        animBobY = MathUtils.lerp(animBobY, targetBob, ease);
+        animRotY = MathUtils.lerp(animRotY, targetTurn, ease);
+        animRotX = MathUtils.lerp(animRotX, targetRotX, ease);
+        animRotZ = MathUtils.lerp(animRotZ, targetRotZ, ease);
+        petModel.position.y = animBobY;
+        petModel.rotation.y = animRotY;
+        petModel.rotation.x = animRotX;
+        petModel.rotation.z = animRotZ;
       }
       renderer.render(scene, camera);
       requestAnimationFrame(render);

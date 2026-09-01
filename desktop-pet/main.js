@@ -1,9 +1,68 @@
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, ipcMain, Notification, Menu, Tray, nativeImage, screen, clipboard, ClipboardItem } = require('electron');
+const { pathToFileURL } = require('url');
+const { app, BrowserWindow, ipcMain, Notification, Menu, Tray, nativeImage, screen, clipboard, ClipboardItem, protocol, net } = require('electron');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { fetchEuAdsDailyReport } = require('../service/eu-ads-daily-report');
+const { mergeTaskEntries } = require('../service/desktop-pet-sync');
+
+const RENDERER_ROOT = path.join(__dirname, 'renderer');
+const PET_SCHEME = 'pet-app';
+
+function parseVisibleHours(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return null;
+    const match = text.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+    if (!match) {
+        console.warn(`[desktop-pet] DESKTOP_PET_VISIBLE_HOURS 格式无效「${text}」，将全天显示。正确示例：7:00-21:00`);
+        return null;
+    }
+    const startH = Number(match[1]);
+    const startM = Number(match[2]);
+    const endH = Number(match[3]);
+    const endM = Number(match[4]);
+    if (startH > 23 || endH > 23 || startM > 59 || endM > 59) {
+        console.warn(`[desktop-pet] DESKTOP_PET_VISIBLE_HOURS 时间越界「${text}」，将全天显示`);
+        return null;
+    }
+    const start = startH * 60 + startM;
+    const end = endH * 60 + endM;
+    if (start > end) {
+        console.warn(`[desktop-pet] DESKTOP_PET_VISIBLE_HOURS 起始不能晚于结束「${text}」，将全天显示`);
+        return null;
+    }
+    return { start, end };
+}
+
+const PET_VISIBLE_HOURS = parseVisibleHours(process.env.DESKTOP_PET_VISIBLE_HOURS);
+
+// 必须在 app ready 之前注册，才能用自定义协议安全加载本地 glTF，无需关闭 webSecurity。
+protocol.registerSchemesAsPrivileged([
+    {
+        scheme: PET_SCHEME,
+        privileges: {
+            standard: true,
+            secure: true,
+            supportFetchAPI: true,
+            corsEnabled: true,
+            stream: true
+        }
+    }
+]);
+
+function registerPetProtocol() {
+    protocol.handle(PET_SCHEME, (request) => {
+        const { pathname } = new URL(request.url);
+        const relativePath = decodeURIComponent(pathname).replace(/^\/+/, '');
+        const filePath = path.normalize(path.join(RENDERER_ROOT, relativePath || 'pet.html'));
+        const rootPrefix = RENDERER_ROOT.endsWith(path.sep) ? RENDERER_ROOT : `${RENDERER_ROOT}${path.sep}`;
+        if (filePath !== RENDERER_ROOT && !filePath.startsWith(rootPrefix)) {
+            return new Response('Forbidden', { status: 403 });
+        }
+        return net.fetch(pathToFileURL(filePath).href, { bypassCustomProtocolHandlers: true });
+    });
+}
 
 const PROMPTS = [
     {
@@ -45,6 +104,9 @@ let reminderTimer = null;
 let wanderTimer = null;
 let wanderTarget = null;
 let wanderPausedUntil = 0;
+let wanderCursor = null;
+let wanderSegmentStartX = null;
+let wanderSegmentGoalPx = 0;
 let petHovered = false;
 let currentPromptKey = '';
 let lastEuAdsReport = null;
@@ -174,6 +236,119 @@ function saveTaskEntry(entryPatch = {}) {
     });
 }
 
+const DESKTOP_PET_API_URL = String(process.env.DESKTOP_PET_API_URL || '').trim().replace(/\/+$/, '');
+const DESKTOP_PET_USERNAME = String(process.env.DESKTOP_PET_USERNAME || '').trim();
+const DESKTOP_PET_PASSWORD = String(process.env.DESKTOP_PET_PASSWORD || '');
+const desktopPetSyncConfigured = Boolean(DESKTOP_PET_API_URL && DESKTOP_PET_USERNAME && DESKTOP_PET_PASSWORD);
+let desktopPetJwt = '';
+let desktopPetSyncWarned = false;
+
+async function desktopPetApi(pathname, options = {}) {
+    const headers = {
+        Accept: 'application/json',
+        ...(options.headers || {})
+    };
+    if (options.body != null) {
+        headers['Content-Type'] = 'application/json';
+    }
+    if (desktopPetJwt) {
+        headers.Authorization = `Bearer ${desktopPetJwt}`;
+    }
+    const response = await fetch(`${DESKTOP_PET_API_URL}${pathname}`, {
+        ...options,
+        headers,
+        body: options.body != null ? JSON.stringify(options.body) : undefined
+    });
+    return response;
+}
+
+async function loginDesktopPet(force = false) {
+    if (!desktopPetSyncConfigured) return false;
+    if (desktopPetJwt && !force) return true;
+    const response = await desktopPetApi('/api/auth/login', {
+        method: 'POST',
+        body: {
+            name: DESKTOP_PET_USERNAME,
+            password: DESKTOP_PET_PASSWORD
+        }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.token) {
+        throw new Error(data.error || `登录失败 HTTP ${response.status}`);
+    }
+    desktopPetJwt = String(data.token);
+    return true;
+}
+
+function writeTodayTaskEntries(date, entries) {
+    const store = readStore();
+    const next = normalizeRecord(date, {
+        date,
+        taskEntries: entries,
+        updatedAt: new Date().toISOString()
+    });
+    store.records[date] = next;
+    store.reminders[date] = store.reminders[date] || {};
+    writeStore(store);
+    return next;
+}
+
+async function syncTodayTasks() {
+    if (!desktopPetSyncConfigured) {
+        if (!desktopPetSyncWarned) {
+            desktopPetSyncWarned = true;
+            console.warn('[desktop-pet] 未配置 DESKTOP_PET_API_URL/USERNAME/PASSWORD，任务仅本地存储');
+        }
+        return getTodayState();
+    }
+
+    const date = getDateKey();
+    const local = getTodayState();
+
+    try {
+        await loginDesktopPet(false);
+        let response = await desktopPetApi(`/api/desktop-pet/tasks?date=${encodeURIComponent(date)}`, {
+            method: 'GET'
+        });
+        if (response.status === 401) {
+            await loginDesktopPet(true);
+            response = await desktopPetApi(`/api/desktop-pet/tasks?date=${encodeURIComponent(date)}`, {
+                method: 'GET'
+            });
+        }
+        const remotePayload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(remotePayload.error || `拉取失败 HTTP ${response.status}`);
+        }
+
+        const merged = mergeTaskEntries(local.record.taskEntries, remotePayload.entries || []);
+        writeTodayTaskEntries(date, merged);
+
+        let putResponse = await desktopPetApi('/api/desktop-pet/tasks', {
+            method: 'PUT',
+            body: { date, entries: merged }
+        });
+        if (putResponse.status === 401) {
+            await loginDesktopPet(true);
+            putResponse = await desktopPetApi('/api/desktop-pet/tasks', {
+                method: 'PUT',
+                body: { date, entries: merged }
+            });
+        }
+        const putPayload = await putResponse.json().catch(() => ({}));
+        if (!putResponse.ok) {
+            throw new Error(putPayload.error || `上传失败 HTTP ${putResponse.status}`);
+        }
+
+        const finalEntries = Array.isArray(putPayload.entries) ? putPayload.entries : merged;
+        writeTodayTaskEntries(date, finalEntries);
+        return getTodayState();
+    } catch (error) {
+        console.warn(`[desktop-pet] 账号同步失败，继续使用本地：${error.message || error}`);
+        return local;
+    }
+}
+
 function reminderAt(prompt, base = new Date()) {
     const date = new Date(base);
     date.setHours(prompt.hour, prompt.minute, 0, 0);
@@ -215,37 +390,125 @@ function getPetPosition() {
     };
 }
 
-function chooseWanderTarget() {
-    if (!petWindow) return null;
+function toWindowCoord(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+function getPetDisplayInfo() {
+    if (!petWindow) {
+        const display = screen.getPrimaryDisplay();
+        return { display: display.workArea, scaleFactor: display.scaleFactor || 1, bounds: getPetPosition() };
+    }
     const bounds = petWindow.getBounds();
     const display = screen.getDisplayNearestPoint({
         x: bounds.x + Math.round(bounds.width / 2),
         y: bounds.y + Math.round(bounds.height / 2)
-    }).workArea;
+    });
+    return {
+        display: display.workArea,
+        scaleFactor: display.scaleFactor || 1,
+        bounds: {
+            ...bounds,
+            x: toWindowCoord(bounds.x),
+            y: toWindowCoord(bounds.y)
+        }
+    };
+}
+
+function randomInt(min, max) {
+    return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function getWanderBounds() {
+    const { display, bounds } = getPetDisplayInfo();
     const padding = 16;
     return {
-        x: Math.round(display.x + padding + Math.random() * Math.max(1, display.width - bounds.width - padding * 2)),
-        // 桌宠仅沿 X 轴徘徊，始终保持用户当前设定的纵向位置。
-        y: bounds.y
+        minX: display.x + padding,
+        maxX: display.x + display.width - bounds.width - padding,
+        y: toWindowCoord(bounds.y),
+        x: toWindowCoord(bounds.x)
     };
+}
+
+function startWanderSegment() {
+    if (!petWindow) return;
+    const bounds = getWanderBounds();
+    wanderSegmentStartX = bounds.x;
+    wanderSegmentGoalPx = randomInt(300, 500);
+    let direction = Math.random() < 0.5 ? -1 : 1;
+    let targetX = wanderSegmentStartX + direction * wanderSegmentGoalPx;
+    if (targetX < bounds.minX) {
+        direction = 1;
+        targetX = Math.min(bounds.maxX, wanderSegmentStartX + wanderSegmentGoalPx);
+    } else if (targetX > bounds.maxX) {
+        direction = -1;
+        targetX = Math.max(bounds.minX, wanderSegmentStartX - wanderSegmentGoalPx);
+    }
+    targetX = Math.max(bounds.minX, Math.min(targetX, bounds.maxX));
+    wanderTarget = { x: toWindowCoord(targetX), y: bounds.y };
+    wanderCursor = { x: bounds.x, y: bounds.y };
+}
+
+function finishWanderSegment() {
+    wanderPausedUntil = Date.now() + randomInt(60, 180) * 1000;
+    wanderTarget = null;
+    wanderSegmentStartX = null;
+    if (petWindow && !petWindow.isDestroyed()) {
+        petWindow.webContents.send('pet:walking', { moving: false });
+    }
 }
 
 function startPetWander() {
     if (wanderTimer) clearInterval(wanderTimer);
     wanderTimer = setInterval(() => {
-        if (!petWindow || !petWindow.isVisible() || chatWindow?.isVisible() || petHovered || Date.now() < wanderPausedUntil) return;
-        const bounds = petWindow.getBounds();
-        if (!wanderTarget || Math.hypot(wanderTarget.x - bounds.x, wanderTarget.y - bounds.y) < 5) {
-            wanderTarget = chooseWanderTarget();
+        if (!petWindow || petWindow.isDestroyed() || !petWindow.isVisible() || chatWindow?.isVisible() || petHovered || Date.now() < wanderPausedUntil) {
+            if (petWindow && !petWindow.isDestroyed()) {
+                petWindow.webContents.send('pet:walking', { moving: false });
+            }
+            return;
         }
-        if (!wanderTarget) return;
-        const dx = wanderTarget.x - bounds.x;
-        const dy = wanderTarget.y - bounds.y;
-        const distance = Math.hypot(dx, dy) || 1;
-        // 低速徘徊，避免在桌面上显得急促。
-        const speed = 0.55;
-        const next = clampPetPosition(bounds.x + (dx / distance) * speed, bounds.y + (dy / distance) * speed);
-        petWindow.setPosition(Math.round(next.x), Math.round(next.y));
+        const { bounds } = getPetDisplayInfo();
+        if (!wanderTarget) {
+            startWanderSegment();
+        }
+        if (!wanderTarget || wanderSegmentStartX == null) return;
+
+        if (!wanderCursor
+            || Math.abs(wanderCursor.x - bounds.x) > 2
+            || Math.abs(wanderCursor.y - bounds.y) > 2) {
+            wanderCursor = { x: bounds.x, y: bounds.y };
+        }
+
+        const dx = wanderTarget.x - wanderCursor.x;
+        if (Math.abs(dx) < 1) {
+            finishWanderSegment();
+            return;
+        }
+
+        const stepDip = 1;
+        const prevX = bounds.x;
+        const next = clampPetPosition(
+            wanderCursor.x + Math.sign(dx) * Math.min(Math.abs(dx), stepDip),
+            wanderTarget.y
+        );
+        const x = toWindowCoord(next.x);
+        const y = toWindowCoord(next.y);
+        wanderCursor = { x, y };
+
+        const walkedPx = Math.abs(x - wanderSegmentStartX);
+        const stuckAtEdge = x === prevX && Math.abs(dx) >= 1;
+        if (walkedPx >= wanderSegmentGoalPx || stuckAtEdge) {
+            finishWanderSegment();
+            if (x !== prevX) {
+                petWindow.setPosition(x, y);
+            }
+            return;
+        }
+
+        if (x !== bounds.x || y !== bounds.y) {
+            petWindow.setPosition(x, y);
+        }
         petWindow.webContents.send('pet:walking', { moving: true, direction: dx >= 0 ? 'right' : 'left' });
     }, 32);
 }
@@ -258,14 +521,29 @@ function getChatPosition(viewMode = '') {
         x: petBounds.x + Math.round(petBounds.width / 2),
         y: petBounds.y + Math.round(petBounds.height / 2)
     }).workArea;
-    const gap = 10;
-    const x = Math.max(display.x + 12, Math.min(petBounds.x + petBounds.width - width + 24, display.x + display.width - width - 12));
-    const petIsInUpperHalf = petBounds.y + petBounds.height / 2 < display.y + display.height / 2;
+    const gap = 6;
+    const margin = 8;
+    // 水平以桌宠中心对齐，避免聊天窗整体偏到一侧显得很远。
+    const petCenterX = petBounds.x + petBounds.width / 2;
+    let x = petCenterX - width / 2;
+    x = Math.max(display.x + margin, Math.min(x, display.x + display.width - width - margin));
+
     const belowY = petBounds.y + petBounds.height + gap;
     const aboveY = petBounds.y - height - gap;
-    const preferredY = petIsInUpperHalf ? belowY : aboveY;
-    const y = Math.max(display.y + 12, Math.min(preferredY, display.y + display.height - height - 12));
-    return { x, y, width, height };
+    const canPlaceAbove = aboveY >= display.y + margin;
+    const canPlaceBelow = belowY + height <= display.y + display.height - margin;
+    // 桌宠多在底部：优先贴在上方；上方不够再放下边。
+    let y;
+    if (canPlaceAbove) y = aboveY;
+    else if (canPlaceBelow) y = belowY;
+    else y = Math.max(display.y + margin, Math.min(aboveY, display.y + display.height - height - margin));
+
+    return {
+        x: Math.round(x),
+        y: Math.round(y),
+        width,
+        height
+    };
 }
 
 function clampPetPosition(nextX, nextY) {
@@ -324,13 +602,11 @@ function createPetWindow() {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false,
-            // 桌宠加载同目录下的 glTF、二进制网格和贴图资源。
-            webSecurity: false
+            nodeIntegration: false
         }
     });
 
-    petWindow.loadFile(path.join(__dirname, 'renderer', 'pet.html'));
+    petWindow.loadURL(`${PET_SCHEME}://localhost/pet.html`);
     petWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
         if (level >= 2) {
             console.error(`[桌宠渲染 ${sourceId}:${line}] ${message}`);
@@ -476,7 +752,9 @@ function startReminderLoop() {
 }
 
 function isPetHiddenForToday(now = new Date()) {
-    return now.getHours() >= 19;
+    if (!PET_VISIBLE_HOURS) return false;
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    return minutes < PET_VISIBLE_HOURS.start || minutes > PET_VISIBLE_HOURS.end;
 }
 
 function applyPetSchedule(now = new Date()) {
@@ -491,11 +769,14 @@ function applyPetSchedule(now = new Date()) {
     }
 }
 
-ipcMain.handle('pet:get-state', async () => ({
-    ...getTodayState(),
-    prompts: PROMPTS,
-    currentPromptKey
-}));
+ipcMain.handle('pet:get-state', async () => {
+    await syncTodayTasks();
+    return {
+        ...getTodayState(),
+        prompts: PROMPTS,
+        currentPromptKey
+    };
+});
 
 ipcMain.handle('pet:save-answer', async (_event, payload) => {
     const time = String(payload?.time || '').trim();
@@ -506,13 +787,14 @@ ipcMain.handle('pet:save-answer', async (_event, payload) => {
     if (!/^\d{2}:\d{2}$/.test(time)) {
         throw new Error('请选择有效时间');
     }
-    const record = saveTaskEntry({
+    saveTaskEntry({
         entryId: payload?.entryId,
         time,
         content
     });
+    const synced = await syncTodayTasks();
     syncStateToWindows();
-    return record;
+    return synced.record;
 });
 
 ipcMain.handle('pet:fetch-eu-ads-report', async () => requestEuAdsReport());
@@ -563,9 +845,11 @@ ipcMain.on('pet:drag-window', (_event, payload) => {
     const nextX = Number(payload?.x);
     const nextY = Number(payload?.y);
     if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
-    const position = clampPetPosition(Math.round(nextX), Math.round(nextY));
+    const position = clampPetPosition(toWindowCoord(nextX), toWindowCoord(nextY));
     wanderPausedUntil = Date.now() + 3000;
     wanderTarget = null;
+    wanderSegmentStartX = null;
+    wanderCursor = { x: position.x, y: position.y };
     petWindow.webContents.send('pet:walking', { moving: false });
     petWindow.setPosition(position.x, position.y);
     if (chatWindow?.isVisible()) {
@@ -576,18 +860,26 @@ ipcMain.on('pet:drag-window', (_event, payload) => {
 ipcMain.on('pet:pause-wander', () => {
     wanderPausedUntil = Date.now() + 3000;
     wanderTarget = null;
+    wanderSegmentStartX = null;
+    wanderCursor = null;
     petWindow?.webContents.send('pet:walking', { moving: false });
 });
 
 ipcMain.on('pet:hover-state', (_event, payload) => {
     petHovered = Boolean(payload?.hovering);
-    if (petHovered) wanderTarget = null;
+    if (petHovered) {
+        wanderTarget = null;
+        wanderSegmentStartX = null;
+    }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+    registerPetProtocol();
     createTray();
     createPetWindow();
     createChatWindow();
+    await syncTodayTasks();
+    syncStateToWindows();
     startReminderLoop();
     startPetWander();
     applyPetSchedule();

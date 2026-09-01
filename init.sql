@@ -148,6 +148,21 @@ CREATE TABLE IF NOT EXISTS daily_rants (
     INDEX idx_user_date (user_id, rant_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 桌宠任务条目（按账号同步）
+CREATE TABLE IF NOT EXISTS desktop_pet_task_entries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    entry_date DATE NOT NULL,
+    client_id VARCHAR(64) NOT NULL,
+    time CHAR(5) NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_date_client (user_id, entry_date, client_id),
+    INDEX idx_user_entry_date (user_id, entry_date),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS sprint_projects (
     id INT AUTO_INCREMENT PRIMARY KEY,
     asin VARCHAR(30) NOT NULL,

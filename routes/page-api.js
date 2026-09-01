@@ -80,6 +80,7 @@ function registerPublicPageApi(app, ctx) {
             setSessionCookie(res, token);
             res.json({
                 status: 'ok',
+                token,
                 mustChangePassword: !!user.must_change_password,
                 redirect: user.must_change_password ? '/account/change-password' : safeNext
             });
@@ -2067,6 +2068,98 @@ function registerProtectedPageApi(app, ctx) {
             res.json(data);
         } catch (e) {
             res.status(400).json({ error: e.message });
+        }
+    });
+
+    const { mergeTaskEntries, rowToEntry, normalizeEntry } = require('../service/desktop-pet-sync');
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const TIME_RE = /^\d{2}:\d{2}$/;
+
+    function toMysqlDateTime(iso) {
+        const d = new Date(iso);
+        if (!Number.isFinite(d.getTime())) return null;
+        return d.toISOString().slice(0, 19).replace('T', ' ');
+    }
+
+    app.get('/api/desktop-pet/tasks', async (req, res) => {
+        try {
+            const date = String(req.query.date || '').trim();
+            if (!DATE_RE.test(date)) {
+                return res.status(400).json({ error: 'date 须为 YYYY-MM-DD' });
+            }
+            const rows = await queryAll(
+                `SELECT client_id, time, content, created_at, updated_at
+                 FROM desktop_pet_task_entries
+                 WHERE user_id = ? AND entry_date = ?
+                 ORDER BY time ASC, client_id ASC`,
+                [req.currentUser.id, date]
+            );
+            res.json({
+                date,
+                entries: rows.map(rowToEntry)
+            });
+        } catch (e) {
+            console.error('desktop-pet GET tasks error:', e);
+            res.status(500).json({ error: '读取桌宠任务失败' });
+        }
+    });
+
+    app.put('/api/desktop-pet/tasks', async (req, res) => {
+        try {
+            const date = String(req.body?.date || '').trim();
+            if (!DATE_RE.test(date)) {
+                return res.status(400).json({ error: 'date 须为 YYYY-MM-DD' });
+            }
+            const incoming = Array.isArray(req.body?.entries) ? req.body.entries : null;
+            if (!incoming) {
+                return res.status(400).json({ error: 'entries 须为数组' });
+            }
+
+            const clientEntries = [];
+            for (const raw of incoming) {
+                const entry = normalizeEntry(raw);
+                if (!entry.id || !entry.content) continue;
+                if (entry.time && !TIME_RE.test(entry.time)) {
+                    return res.status(400).json({ error: `time 须为 HH:MM：${entry.id}` });
+                }
+                clientEntries.push(entry);
+            }
+
+            const rows = await queryAll(
+                `SELECT client_id, time, content, created_at, updated_at
+                 FROM desktop_pet_task_entries
+                 WHERE user_id = ? AND entry_date = ?`,
+                [req.currentUser.id, date]
+            );
+            const merged = mergeTaskEntries(clientEntries, rows.map(rowToEntry));
+
+            for (const entry of merged) {
+                const createdAt = toMysqlDateTime(entry.createdAt) || toMysqlDateTime(new Date().toISOString());
+                const updatedAt = toMysqlDateTime(entry.updatedAt) || createdAt;
+                await runSql(
+                    `INSERT INTO desktop_pet_task_entries
+                        (user_id, entry_date, client_id, time, content, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE
+                        time = VALUES(time),
+                        content = VALUES(content),
+                        created_at = VALUES(created_at),
+                        updated_at = VALUES(updated_at)`,
+                    [req.currentUser.id, date, entry.id, entry.time || '', entry.content, createdAt, updatedAt]
+                );
+            }
+
+            const savedRows = await queryAll(
+                `SELECT client_id, time, content, created_at, updated_at
+                 FROM desktop_pet_task_entries
+                 WHERE user_id = ? AND entry_date = ?
+                 ORDER BY time ASC, client_id ASC`,
+                [req.currentUser.id, date]
+            );
+            res.json({ date, entries: savedRows.map(rowToEntry) });
+        } catch (e) {
+            console.error('desktop-pet PUT tasks error:', e);
+            res.status(500).json({ error: '保存桌宠任务失败' });
         }
     });
 }

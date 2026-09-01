@@ -22,6 +22,10 @@ let pointerStart = null;
 let clickTimer = null;
 let petModel = null;
 let walkDirection = 'left';
+let animBobY = 0;
+let animRotX = 0;
+let animRotZ = 0;
+let animRotY = 0;
 
 function showPetError(message) {
     console.error(message);
@@ -30,8 +34,13 @@ function showPetError(message) {
 }
 
 function startThreePet() {
-    const renderer = new THREE.WebGLRenderer({ canvas: els.petCanvas, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({
+        canvas: els.petCanvas,
+        alpha: true,
+        antialias: true,
+        powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
@@ -65,17 +74,23 @@ function startThreePet() {
         }
         if (petModel) {
             const walking = state.isMoving && !state.isDragging && !state.isHovering && !state.isChatOpen;
-            petModel.position.y = walking ? Math.abs(Math.sin(now * 0.008)) * 0.028 : 0;
-            // 模型没有独立头部骨骼，使用明显的头身转向来表达左右看。
-            // 此模型的原始正面轴与屏幕 X 轴方向相反，因此这里需要翻转左右目标角。
-            // 行走时保持面向屏幕，只向移动方向偏转 15°，轻露侧脸。
-            const walkingTurn = THREE.MathUtils.degToRad(15);
+            const gait = now * 0.00275;
+            const targetBob = walking ? Math.abs(Math.sin(now * 0.0035)) * 0.022 : 0;
+            // 模型没有独立头部骨骼，使用头身轻转向表达左右看；原始正面轴与屏幕 X 相反。
+            const walkingTurn = THREE.MathUtils.degToRad(12);
             const targetTurn = walking ? (walkDirection === 'right' ? walkingTurn : -walkingTurn) : 0;
-            petModel.rotation.y = THREE.MathUtils.lerp(petModel.rotation.y, targetTurn, 0.05);
-            const gait = now * 0.006;
-            // 用头身整体的轻点头与左右歪头模拟走路时的摇头晃脑。
-            petModel.rotation.x = walking ? Math.sin(gait * 1.7) * 0.075 : 0;
-            petModel.rotation.z = walking ? Math.sin(gait) * 0.055 : 0;
+            const targetRotX = walking ? Math.sin(gait * 1.7) * 0.055 : 0;
+            const targetRotZ = walking ? Math.sin(gait) * 0.04 : 0;
+            // 平滑插值，避免行走开关与转向时出现跳帧感。
+            const ease = walking ? 0.12 : 0.18;
+            animBobY = THREE.MathUtils.lerp(animBobY, targetBob, ease);
+            animRotY = THREE.MathUtils.lerp(animRotY, targetTurn, ease);
+            animRotX = THREE.MathUtils.lerp(animRotX, targetRotX, ease);
+            animRotZ = THREE.MathUtils.lerp(animRotZ, targetRotZ, ease);
+            petModel.position.y = animBobY;
+            petModel.rotation.y = animRotY;
+            petModel.rotation.x = animRotX;
+            petModel.rotation.z = animRotZ;
         }
         renderer.render(scene, camera);
         requestAnimationFrame(render);
