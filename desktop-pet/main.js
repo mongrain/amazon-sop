@@ -842,9 +842,19 @@ ipcMain.on('pet:activate-prompt', (_event, payload) => {
 
 ipcMain.on('pet:drag-window', (_event, payload) => {
     if (!petWindow) return;
-    const nextX = Number(payload?.x);
-    const nextY = Number(payload?.y);
-    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+    const bounds = petWindow.getBounds();
+    const deltaX = Number(payload?.deltaX);
+    const deltaY = Number(payload?.deltaY);
+    let nextX;
+    let nextY;
+    if (Number.isFinite(deltaX) && Number.isFinite(deltaY)) {
+        nextX = bounds.x + deltaX;
+        nextY = bounds.y + deltaY;
+    } else {
+        nextX = Number(payload?.x);
+        nextY = Number(payload?.y);
+        if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+    }
     const position = clampPetPosition(toWindowCoord(nextX), toWindowCoord(nextY));
     wanderPausedUntil = Date.now() + 3000;
     wanderTarget = null;

@@ -32591,10 +32591,11 @@ void main() {
       els.petBtn.classList.add("dragging");
     }
     if (!state.isDragging) return;
-    window.desktopPet.dragWindow({
-      x: pointerStart.windowX + deltaX,
-      y: pointerStart.windowY + deltaY
-    });
+    const stepX = event.screenX - pointerStart.lastScreenX;
+    const stepY = event.screenY - pointerStart.lastScreenY;
+    pointerStart.lastScreenX = event.screenX;
+    pointerStart.lastScreenY = event.screenY;
+    window.desktopPet.dragWindow({ deltaX: stepX, deltaY: stepY });
   }
   function stopPointerDrag() {
     pointerStart = null;
@@ -32610,8 +32611,8 @@ void main() {
     pointerStart = {
       screenX: event.screenX,
       screenY: event.screenY,
-      windowX: window.screenX,
-      windowY: window.screenY
+      lastScreenX: event.screenX,
+      lastScreenY: event.screenY
     };
     window.desktopPet.pauseWander();
     window.addEventListener("mousemove", handlePointerMove);
