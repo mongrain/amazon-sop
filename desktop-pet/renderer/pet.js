@@ -1,17 +1,93 @@
+import * as THREE from './vendor/three.module.js';
+import { GLTFLoader } from './vendor/GLTFLoader.js';
+
 const els = {
     petBtn: document.getElementById('petBtn'),
     petBubble: document.getElementById('petBubble'),
-    petDot: document.getElementById('petDot')
+    petDot: document.getElementById('petDot'),
+    petCanvas: document.getElementById('petCanvas'),
+    petStatus: document.getElementById('petStatus')
 };
 
 const state = {
     currentPromptKey: '',
     reminders: {},
-    isDragging: false
+    isDragging: false,
+    isHovering: false,
+    isChatOpen: false,
+    isMoving: false
 };
 
 let pointerStart = null;
 let clickTimer = null;
+let petModel = null;
+let walkDirection = 'left';
+
+function showPetError(message) {
+    console.error(message);
+    els.petStatus.textContent = '模型加载失败';
+    els.petStatus.hidden = false;
+}
+
+function startThreePet() {
+    const renderer = new THREE.WebGLRenderer({ canvas: els.petCanvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 100);
+    camera.position.set(0, 0.38, 2.45);
+    const petRoot = new THREE.Group();
+    scene.add(petRoot);
+
+    new GLTFLoader().load('./scene.gltf', (gltf) => {
+        gltf.scene.traverse((node) => {
+            if (node.name.startsWith('Hachiware') || node.name.startsWith('Usagi') || node.name.startsWith('Mouth.003') || node.name.startsWith('Eyes.002')) {
+                node.visible = false;
+            }
+        });
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        gltf.scene.position.sub(center);
+        gltf.scene.position.y += size.y / 2;
+        petRoot.add(gltf.scene);
+        petModel = petRoot;
+    }, undefined, (error) => showPetError(`无法加载 Chiikawa 模型：${error?.message || error}`));
+
+    function render(now) {
+        const width = els.petCanvas.clientWidth;
+        const height = els.petCanvas.clientHeight;
+        if (els.petCanvas.width !== width * renderer.getPixelRatio() || els.petCanvas.height !== height * renderer.getPixelRatio()) {
+            renderer.setSize(width, height, false);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+        }
+        if (petModel) {
+            const walking = state.isMoving && !state.isDragging && !state.isHovering && !state.isChatOpen;
+            petModel.position.y = walking ? Math.abs(Math.sin(now * 0.008)) * 0.028 : 0;
+            // 模型没有独立头部骨骼，使用明显的头身转向来表达左右看。
+            // 此模型的原始正面轴与屏幕 X 轴方向相反，因此这里需要翻转左右目标角。
+            // 行走时保持面向屏幕，只向移动方向偏转 15°，轻露侧脸。
+            const walkingTurn = THREE.MathUtils.degToRad(15);
+            const targetTurn = walking ? (walkDirection === 'right' ? walkingTurn : -walkingTurn) : 0;
+            petModel.rotation.y = THREE.MathUtils.lerp(petModel.rotation.y, targetTurn, 0.05);
+            const gait = now * 0.006;
+            // 用头身整体的轻点头与左右歪头模拟走路时的摇头晃脑。
+            petModel.rotation.x = walking ? Math.sin(gait * 1.7) * 0.075 : 0;
+            petModel.rotation.z = walking ? Math.sin(gait) * 0.055 : 0;
+        }
+        renderer.render(scene, camera);
+        requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+}
+
+try {
+    startThreePet();
+} catch (error) {
+    showPetError(`无法初始化 3D 渲染：${error?.message || error}`);
+}
 
 function bubbleText(promptKey) {
     if (promptKey === 'euAdsReport') return '欧洲广告日报来了';
@@ -53,8 +129,19 @@ els.petBtn.addEventListener('mousedown', (event) => {
         windowX: window.screenX,
         windowY: window.screenY
     };
+    window.desktopPet.pauseWander();
     window.addEventListener('mousemove', handlePointerMove);
     window.addEventListener('mouseup', stopPointerDrag);
+});
+
+els.petBtn.addEventListener('mouseenter', () => {
+    state.isHovering = true;
+    window.desktopPet.setHoverState({ hovering: true });
+});
+
+els.petBtn.addEventListener('mouseleave', () => {
+    state.isHovering = false;
+    window.desktopPet.setHoverState({ hovering: false });
 });
 
 els.petBtn.addEventListener('click', () => {
@@ -82,14 +169,25 @@ els.petBtn.addEventListener('dblclick', () => {
 
 window.desktopPet.onPrompt((prompt) => {
     state.currentPromptKey = prompt.key;
-    els.petBubble.textContent = prompt.question;
+    if (els.petBubble) els.petBubble.textContent = prompt.question;
     els.petDot.classList.remove('hidden');
 });
 
 window.desktopPet.onStateUpdated((payload) => {
     state.currentPromptKey = payload.currentPromptKey || state.currentPromptKey || 'tasks';
     state.reminders = payload.reminders || {};
-    els.petBubble.textContent = bubbleText(state.currentPromptKey);
+    if (els.petBubble) els.petBubble.textContent = bubbleText(state.currentPromptKey);
     const hasPending = !((payload.record?.taskEntries || []).length);
     els.petDot.classList.toggle('hidden', !hasPending);
+});
+
+window.desktopPet.onWalking((payload) => {
+    state.isMoving = Boolean(payload?.moving);
+    if (payload?.direction) {
+        walkDirection = payload.direction === 'right' ? 'right' : 'left';
+    }
+});
+
+window.desktopPet.onChatVisibility((payload) => {
+    state.isChatOpen = Boolean(payload?.visible);
 });

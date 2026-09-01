@@ -103,15 +103,13 @@ function extractSummaryRow(entry) {
         const completion = raw.slice(splitIndex + delimiterLength).trim();
         return {
             taskName: taskName || raw,
-            completion: completion
-                ? `${completion}${entry?.time ? `（记录时间 ${entry.time}）` : ''}`
-                : `已记录${entry?.time ? `（记录时间 ${entry.time}）` : ''}`
+            completion: completion || '已记录'
         };
     }
 
     return {
         taskName: raw || '未命名任务',
-        completion: `已记录${entry?.time ? `（记录时间 ${entry.time}）` : ''}`
+        completion: '已记录'
     };
 }
 
