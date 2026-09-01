@@ -23,13 +23,13 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    padding: 6px;
+    padding: 4px;
 }
 
 .pet-button {
     position: relative;
-    width: 124px;
-    height: 130px;
+    width: 83px;
+    height: 87px;
     border: none;
     background: transparent;
     cursor: grab;
@@ -43,33 +43,44 @@ body {
 .pet-shadow {
     position: absolute;
     left: 50%;
-    bottom: 6px;
-    width: 76px;
-    height: 16px;
+    bottom: 4px;
+    width: 51px;
+    height: 11px;
     background: rgba(66, 94, 54, 0.18);
     border-radius: 999px;
     transform: translateX(-50%);
-    filter: blur(4px);
+    filter: blur(3px);
 }
 
-.pet-svg {
+.pet-canvas {
     position: absolute;
-    inset: 2px 2px 8px;
-    width: calc(100% - 4px);
-    height: calc(100% - 10px);
-    overflow: visible;
-    filter: drop-shadow(0 8px 10px rgba(15, 23, 42, 0.05));
+    inset: 0 0 4px;
+    width: 100%;
+    height: calc(100% - 4px);
+    pointer-events: none;
+}
+
+.pet-status {
+    position: absolute;
+    inset: 18px 6px auto;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #8b2f2f;
+    font-size: 10px;
+    line-height: 1.35;
+    pointer-events: none;
 }
 
 .pet-dot {
     position: absolute;
-    top: 10px;
-    right: 8px;
-    width: 14px;
-    height: 14px;
+    top: 7px;
+    right: 5px;
+    width: 9px;
+    height: 9px;
     border-radius: 999px;
     background: #ef4444;
-    border: 2px solid #fff;
+    border: 1px solid #fff;
 }
 
 .pet-bubble {

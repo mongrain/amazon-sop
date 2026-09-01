@@ -11,7 +11,7 @@
         <div class="chat-card">
             <header class="chat-header drag">
                 <div>
-                    <div class="chat-title">吉伊卡哇来问问你</div>
+                    <div class="chat-title">小吉来咯</div>
                     <div class="chat-subtitle" id="chatSubtitle">等待提醒</div>
                 </div>
                 <button id="closeChatBtn" class="chat-close no-drag" type="button">收起</button>
@@ -24,6 +24,18 @@
                 </div>
 
                 <div class="quick-tabs" id="quickTabs"></div>
+
+                <section id="euAdsPanel" class="eu-ads-panel hidden">
+                    <div class="eu-ads-head">
+                        <div class="eu-ads-title">欧洲站广告近 7 日汇总</div>
+                        <button id="euAdsRefreshBtn" class="ghost-btn" type="button">刷新</button>
+                    </div>
+                    <div id="euAdsHint" class="eu-ads-hint"></div>
+                    <div id="euAdsTableWrap" class="eu-ads-table-wrap"></div>
+                    <div class="eu-ads-suggestions-title">今日建议</div>
+                    <ul id="euAdsSuggestions" class="eu-ads-suggestions"></ul>
+                    <div id="euAdsFooter" class="eu-ads-footer"></div>
+                </section>
 
                 <section class="answer-panel">
                     <label id="answerLabel" class="answer-label" for="answerInput">记录一条任务</label>

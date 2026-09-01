@@ -11,7 +11,7 @@
     "build": "vite build --config frontend/vite.config.js",
     "preview": "vite preview --config frontend/vite.config.js",
     "desktop:start": "electron desktop-pet/main.js",
-    "desktop:check": "node --check desktop-pet/main.js && node --check desktop-pet/preload.js && node --check desktop-pet/renderer/renderer.js && node --check desktop-pet/renderer/pet.js"
+    "desktop:check": "node --check desktop-pet/main.js && node --check desktop-pet/preload.js && node --check desktop-pet/renderer/renderer.js && node --input-type=module --check < desktop-pet/renderer/pet.js && node --check desktop-pet/renderer/pet.bundle.js"
   },
   "dependencies": {
     "axios": "^1.18.0",

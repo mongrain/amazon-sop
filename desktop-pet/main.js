@@ -2,7 +2,20 @@ const path = require('path');
 const fs = require('fs');
 const { app, BrowserWindow, ipcMain, Notification, Menu, Tray, nativeImage, screen, clipboard, ClipboardItem } = require('electron');
 
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { fetchEuAdsDailyReport } = require('../service/eu-ads-daily-report');
+
 const PROMPTS = [
+    {
+        key: 'euAdsReport',
+        label: '12:20',
+        title: '欧洲广告日报',
+        question: '欧洲站广告近 7 日汇总来了。',
+        message: '欧洲站广告日报到了',
+        placeholder: '',
+        hour: 12,
+        minute: 20
+    },
     {
         key: 'tasks',
         label: '12:30',
@@ -29,7 +42,13 @@ let petWindow = null;
 let chatWindow = null;
 let tray = null;
 let reminderTimer = null;
+let wanderTimer = null;
+let wanderTarget = null;
+let wanderPausedUntil = 0;
+let petHovered = false;
 let currentPromptKey = '';
+let lastEuAdsReport = null;
+let euAdsFetchInFlight = null;
 
 function ensureStorePath() {
     const storePath = path.join(app.getPath('userData'), 'desktop-pet-state.json');
@@ -186,8 +205,8 @@ function syncStateToWindows() {
 
 function getPetPosition() {
     const display = screen.getPrimaryDisplay().workArea;
-    const width = 132;
-    const height = 132;
+    const width = 88;
+    const height = 88;
     return {
         x: display.x + display.width - width - 18,
         y: display.y + display.height - height - 18,
@@ -196,12 +215,56 @@ function getPetPosition() {
     };
 }
 
-function getChatPosition() {
+function chooseWanderTarget() {
+    if (!petWindow) return null;
+    const bounds = petWindow.getBounds();
+    const display = screen.getDisplayNearestPoint({
+        x: bounds.x + Math.round(bounds.width / 2),
+        y: bounds.y + Math.round(bounds.height / 2)
+    }).workArea;
+    const padding = 16;
+    return {
+        x: Math.round(display.x + padding + Math.random() * Math.max(1, display.width - bounds.width - padding * 2)),
+        // 桌宠仅沿 X 轴徘徊，始终保持用户当前设定的纵向位置。
+        y: bounds.y
+    };
+}
+
+function startPetWander() {
+    if (wanderTimer) clearInterval(wanderTimer);
+    wanderTimer = setInterval(() => {
+        if (!petWindow || !petWindow.isVisible() || chatWindow?.isVisible() || petHovered || Date.now() < wanderPausedUntil) return;
+        const bounds = petWindow.getBounds();
+        if (!wanderTarget || Math.hypot(wanderTarget.x - bounds.x, wanderTarget.y - bounds.y) < 5) {
+            wanderTarget = chooseWanderTarget();
+        }
+        if (!wanderTarget) return;
+        const dx = wanderTarget.x - bounds.x;
+        const dy = wanderTarget.y - bounds.y;
+        const distance = Math.hypot(dx, dy) || 1;
+        // 低速徘徊，避免在桌面上显得急促。
+        const speed = 0.55;
+        const next = clampPetPosition(bounds.x + (dx / distance) * speed, bounds.y + (dy / distance) * speed);
+        petWindow.setPosition(Math.round(next.x), Math.round(next.y));
+        petWindow.webContents.send('pet:walking', { moving: true, direction: dx >= 0 ? 'right' : 'left' });
+    }, 32);
+}
+
+function getChatPosition(viewMode = '') {
     const petBounds = petWindow ? petWindow.getBounds() : getPetPosition();
     const width = 360;
-    const height = 470;
-    const x = Math.max(12, petBounds.x + petBounds.width - width + 24);
-    const y = Math.max(12, petBounds.y - height + 18);
+    const height = currentPromptKey === 'euAdsReport' ? 470 : (viewMode === 'preview' ? 700 : 280);
+    const display = screen.getDisplayNearestPoint({
+        x: petBounds.x + Math.round(petBounds.width / 2),
+        y: petBounds.y + Math.round(petBounds.height / 2)
+    }).workArea;
+    const gap = 10;
+    const x = Math.max(display.x + 12, Math.min(petBounds.x + petBounds.width - width + 24, display.x + display.width - width - 12));
+    const petIsInUpperHalf = petBounds.y + petBounds.height / 2 < display.y + display.height / 2;
+    const belowY = petBounds.y + petBounds.height + gap;
+    const aboveY = petBounds.y - height - gap;
+    const preferredY = petIsInUpperHalf ? belowY : aboveY;
+    const y = Math.max(display.y + 12, Math.min(preferredY, display.y + display.height - height - 12));
     return { x, y, width, height };
 }
 
@@ -229,7 +292,14 @@ function createTray() {
     tray.on('double-click', () => showChatWindow(currentPromptKey || 'tasks'));
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: '打开聊天框', click: () => showChatWindow(currentPromptKey || 'tasks') },
-        { label: '隐藏聊天框', click: () => chatWindow?.hide() },
+        { label: '欧洲广告日报', click: () => showChatWindow('euAdsReport') },
+        {
+            label: '隐藏聊天框',
+            click: () => {
+                chatWindow?.hide();
+                petWindow?.webContents.send('pet:chat-visibility', { visible: false });
+            }
+        },
         { type: 'separator' },
         { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
     ]));
@@ -254,14 +324,23 @@ function createPetWindow() {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            // 桌宠加载同目录下的 glTF、二进制网格和贴图资源。
+            webSecurity: false
         }
     });
 
     petWindow.loadFile(path.join(__dirname, 'renderer', 'pet.html'));
+    petWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+        if (level >= 2) {
+            console.error(`[桌宠渲染 ${sourceId}:${line}] ${message}`);
+        }
+    });
     petWindow.once('ready-to-show', () => {
-        petWindow.show();
-        petWindow.setAlwaysOnTop(true, 'screen-saver');
+        if (!isPetHiddenForToday()) {
+            petWindow.show();
+            petWindow.setAlwaysOnTop(true, 'screen-saver');
+        }
         syncStateToWindows();
     });
     petWindow.on('closed', () => {
@@ -297,6 +376,7 @@ function createChatWindow() {
         if (!app.isQuitting) {
             event.preventDefault();
             chatWindow.hide();
+            petWindow?.webContents.send('pet:chat-visibility', { visible: false });
         }
     });
     chatWindow.on('closed', () => {
@@ -308,12 +388,13 @@ function createChatWindow() {
 }
 
 function showChatWindow(options = {}) {
+    if (isPetHiddenForToday()) return;
     if (!chatWindow) return;
     const promptKey = typeof options === 'string' ? options : (options.promptKey || '');
     const viewMode = typeof options === 'string' ? '' : String(options.viewMode || '').trim();
     const resetDraft = typeof options === 'string' ? false : Boolean(options.resetDraft);
     if (promptKey) currentPromptKey = promptKey;
-    const bounds = getChatPosition();
+    const bounds = getChatPosition(viewMode);
     chatWindow.setBounds(bounds);
     if (!chatWindow.isVisible()) {
         chatWindow.show();
@@ -323,6 +404,8 @@ function showChatWindow(options = {}) {
     }
     chatWindow.focus();
     chatWindow.webContents.send('pet:open-chat', { promptKey: currentPromptKey, viewMode, resetDraft });
+    petWindow?.webContents.send('pet:chat-visibility', { visible: true });
+    petWindow?.webContents.send('pet:walking', { moving: false });
     syncStateToWindows();
 }
 
@@ -341,12 +424,48 @@ function triggerPrompt(prompt) {
     petWindow?.webContents.send('pet:prompt', prompt);
     chatWindow?.webContents.send('pet:prompt', prompt);
     showChatWindow(prompt.key);
+    if (prompt.key === 'euAdsReport') {
+        prefetchEuAdsReport();
+    }
+}
+
+async function requestEuAdsReport() {
+    const url = String(process.env.YANJUN_MCP_URL || '').trim();
+    if (!url) {
+        return { error: '未配置领星网关', report: lastEuAdsReport };
+    }
+    try {
+        const report = await fetchEuAdsDailyReport({ todayYmd: getDateKey() });
+        lastEuAdsReport = report;
+        return { report, error: '' };
+    } catch (error) {
+        return {
+            error: error.message || '拉取欧洲广告日报失败',
+            report: lastEuAdsReport
+        };
+    }
+}
+
+function prefetchEuAdsReport() {
+    if (euAdsFetchInFlight) return euAdsFetchInFlight;
+    euAdsFetchInFlight = requestEuAdsReport()
+        .then((payload) => {
+            chatWindow?.webContents.send('pet:eu-ads-report', payload);
+            petWindow?.webContents.send('pet:eu-ads-report', payload);
+            return payload;
+        })
+        .finally(() => {
+            euAdsFetchInFlight = null;
+        });
+    return euAdsFetchInFlight;
 }
 
 function startReminderLoop() {
     if (reminderTimer) clearInterval(reminderTimer);
     reminderTimer = setInterval(() => {
         const now = new Date();
+        applyPetSchedule(now);
+        if (isPetHiddenForToday(now)) return;
         for (const prompt of PROMPTS) {
             if (!hasPromptBeenSent(prompt.key) && now >= reminderAt(prompt, now)) {
                 triggerPrompt(prompt);
@@ -354,6 +473,22 @@ function startReminderLoop() {
             }
         }
     }, 30000);
+}
+
+function isPetHiddenForToday(now = new Date()) {
+    return now.getHours() >= 19;
+}
+
+function applyPetSchedule(now = new Date()) {
+    if (isPetHiddenForToday(now)) {
+        petWindow?.hide();
+        chatWindow?.hide();
+        petWindow?.webContents.send('pet:chat-visibility', { visible: false });
+        return;
+    }
+    if (petWindow && !petWindow.isVisible()) {
+        petWindow.showInactive();
+    }
 }
 
 ipcMain.handle('pet:get-state', async () => ({
@@ -379,6 +514,8 @@ ipcMain.handle('pet:save-answer', async (_event, payload) => {
     syncStateToWindows();
     return record;
 });
+
+ipcMain.handle('pet:fetch-eu-ads-report', async () => requestEuAdsReport());
 
 ipcMain.handle('pet:copy-summary', async (_event, payload) => {
     const text = String(payload?.text || '').trim();
@@ -411,6 +548,7 @@ ipcMain.on('pet:open-chat', (_event, payload) => {
 
 ipcMain.on('pet:hide-chat', () => {
     chatWindow?.hide();
+    petWindow?.webContents.send('pet:chat-visibility', { visible: false });
 });
 
 ipcMain.on('pet:activate-prompt', (_event, payload) => {
@@ -426,10 +564,24 @@ ipcMain.on('pet:drag-window', (_event, payload) => {
     const nextY = Number(payload?.y);
     if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
     const position = clampPetPosition(Math.round(nextX), Math.round(nextY));
+    wanderPausedUntil = Date.now() + 3000;
+    wanderTarget = null;
+    petWindow.webContents.send('pet:walking', { moving: false });
     petWindow.setPosition(position.x, position.y);
     if (chatWindow?.isVisible()) {
         chatWindow.setBounds(getChatPosition());
     }
+});
+
+ipcMain.on('pet:pause-wander', () => {
+    wanderPausedUntil = Date.now() + 3000;
+    wanderTarget = null;
+    petWindow?.webContents.send('pet:walking', { moving: false });
+});
+
+ipcMain.on('pet:hover-state', (_event, payload) => {
+    petHovered = Boolean(payload?.hovering);
+    if (petHovered) wanderTarget = null;
 });
 
 app.whenReady().then(() => {
@@ -437,6 +589,8 @@ app.whenReady().then(() => {
     createPetWindow();
     createChatWindow();
     startReminderLoop();
+    startPetWander();
+    applyPetSchedule();
 
     app.on('activate', () => {
         if (!petWindow) createPetWindow();
@@ -448,6 +602,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
     app.isQuitting = true;
     if (reminderTimer) clearInterval(reminderTimer);
+    if (wanderTimer) clearInterval(wanderTimer);
 });
 
 app.on('window-all-closed', () => {

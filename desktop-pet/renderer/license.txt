@@ -1,0 +1,11 @@
+Model Information:
+* title:	chiikawa and friends
+* source:	https://sketchfab.com/3d-models/chiikawa-and-friends-4c156cab855e451481829d25f4cf3bb1
+* author:	Nini (https://sketchfab.com/bawangkun)
+
+Model License:
+* license type:	CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)
+* requirements:	Author must be credited. No commercial use.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "chiikawa and friends" (https://sketchfab.com/3d-models/chiikawa-and-friends-4c156cab855e451481829d25f4cf3bb1) by Nini (https://sketchfab.com/bawangkun) licensed under CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)
