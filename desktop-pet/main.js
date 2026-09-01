@@ -2,7 +2,20 @@ const path = require('path');
 const fs = require('fs');
 const { app, BrowserWindow, ipcMain, Notification, Menu, Tray, nativeImage, screen, clipboard, ClipboardItem } = require('electron');
 
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { fetchEuAdsDailyReport } = require('../service/eu-ads-daily-report');
+
 const PROMPTS = [
+    {
+        key: 'euAdsReport',
+        label: '12:20',
+        title: '欧洲广告日报',
+        question: '欧洲站广告近 7 日汇总来了。',
+        message: '欧洲站广告日报到了',
+        placeholder: '',
+        hour: 12,
+        minute: 20
+    },
     {
         key: 'tasks',
         label: '12:30',
@@ -30,6 +43,8 @@ let chatWindow = null;
 let tray = null;
 let reminderTimer = null;
 let currentPromptKey = '';
+let lastEuAdsReport = null;
+let euAdsFetchInFlight = null;
 
 function ensureStorePath() {
     const storePath = path.join(app.getPath('userData'), 'desktop-pet-state.json');
@@ -229,6 +244,7 @@ function createTray() {
     tray.on('double-click', () => showChatWindow(currentPromptKey || 'tasks'));
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: '打开聊天框', click: () => showChatWindow(currentPromptKey || 'tasks') },
+        { label: '欧洲广告日报', click: () => showChatWindow('euAdsReport') },
         { label: '隐藏聊天框', click: () => chatWindow?.hide() },
         { type: 'separator' },
         { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
@@ -341,6 +357,40 @@ function triggerPrompt(prompt) {
     petWindow?.webContents.send('pet:prompt', prompt);
     chatWindow?.webContents.send('pet:prompt', prompt);
     showChatWindow(prompt.key);
+    if (prompt.key === 'euAdsReport') {
+        prefetchEuAdsReport();
+    }
+}
+
+async function requestEuAdsReport() {
+    const url = String(process.env.YANJUN_MCP_URL || '').trim();
+    if (!url) {
+        return { error: '未配置领星网关', report: lastEuAdsReport };
+    }
+    try {
+        const report = await fetchEuAdsDailyReport({ todayYmd: getDateKey() });
+        lastEuAdsReport = report;
+        return { report, error: '' };
+    } catch (error) {
+        return {
+            error: error.message || '拉取欧洲广告日报失败',
+            report: lastEuAdsReport
+        };
+    }
+}
+
+function prefetchEuAdsReport() {
+    if (euAdsFetchInFlight) return euAdsFetchInFlight;
+    euAdsFetchInFlight = requestEuAdsReport()
+        .then((payload) => {
+            chatWindow?.webContents.send('pet:eu-ads-report', payload);
+            petWindow?.webContents.send('pet:eu-ads-report', payload);
+            return payload;
+        })
+        .finally(() => {
+            euAdsFetchInFlight = null;
+        });
+    return euAdsFetchInFlight;
 }
 
 function startReminderLoop() {
@@ -379,6 +429,8 @@ ipcMain.handle('pet:save-answer', async (_event, payload) => {
     syncStateToWindows();
     return record;
 });
+
+ipcMain.handle('pet:fetch-eu-ads-report', async () => requestEuAdsReport());
 
 ipcMain.handle('pet:copy-summary', async (_event, payload) => {
     const text = String(payload?.text || '').trim();

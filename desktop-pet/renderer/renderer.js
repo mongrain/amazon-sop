@@ -12,7 +12,10 @@ const state = {
     draft: {
         time: '',
         content: ''
-    }
+    },
+    euAdsPayload: null,
+    euAdsLoading: false,
+    euAdsError: ''
 };
 
 const els = {
@@ -33,7 +36,13 @@ const els = {
     summaryPanel: document.getElementById('summaryPanel'),
     summaryTableWrap: document.getElementById('summaryTableWrap'),
     timeShortcut1230: document.getElementById('timeShortcut1230'),
-    timeShortcut1830: document.getElementById('timeShortcut1830')
+    timeShortcut1830: document.getElementById('timeShortcut1830'),
+    euAdsPanel: document.getElementById('euAdsPanel'),
+    euAdsRefreshBtn: document.getElementById('euAdsRefreshBtn'),
+    euAdsHint: document.getElementById('euAdsHint'),
+    euAdsTableWrap: document.getElementById('euAdsTableWrap'),
+    euAdsSuggestions: document.getElementById('euAdsSuggestions'),
+    euAdsFooter: document.getElementById('euAdsFooter')
 };
 
 function getPrompt(promptKey) {
@@ -159,6 +168,137 @@ function resetDraft() {
     state.draft.content = '';
 }
 
+function isEuAdsView() {
+    return state.viewMode === 'euAds';
+}
+
+function formatShortDate(ymd) {
+    const parts = String(ymd || '').split('-');
+    if (parts.length !== 3) return ymd || '';
+    return `${parts[1]}-${parts[2]}`;
+}
+
+function applyEuAdsPayload(payload) {
+    state.euAdsError = String(payload?.error || '').trim();
+    state.euAdsPayload = payload?.report || null;
+}
+
+function renderEuAds() {
+    const active = isEuAdsView();
+    els.euAdsPanel.classList.toggle('hidden', !active);
+    if (!active) return;
+
+    const prompt = currentPrompt();
+    els.chatSubtitle.textContent = `${prompt?.label || '12:20'} · ${prompt?.title || '欧洲广告日报'}`;
+    els.questionBubble.textContent = prompt?.question || '欧洲站广告近 7 日汇总来了。';
+
+    if (state.euAdsLoading) {
+        els.euAdsHint.textContent = '正在拉取欧洲站广告数据…';
+        els.euAdsRefreshBtn.disabled = true;
+        els.euAdsRefreshBtn.textContent = '拉取中…';
+        return;
+    }
+
+    els.euAdsRefreshBtn.disabled = false;
+    els.euAdsRefreshBtn.textContent = '刷新';
+
+    if (state.euAdsError) {
+        els.euAdsHint.textContent = state.euAdsError;
+    } else if (state.euAdsPayload) {
+        els.euAdsHint.textContent = '以下为近 7 个完整自然日的广告汇总（曝光 / 点击 / 出单）。';
+    } else {
+        els.euAdsHint.textContent = '点击刷新拉取最新数据。';
+    }
+
+    els.euAdsTableWrap.innerHTML = '';
+    const report = state.euAdsPayload;
+    if (report && Array.isArray(report.rows) && report.rows.length) {
+        const table = document.createElement('table');
+        table.className = 'eu-ads-table';
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        const headMetric = document.createElement('th');
+        headMetric.textContent = '国家 · 指标';
+        headRow.appendChild(headMetric);
+        (report.dates || []).forEach((ymd) => {
+            const th = document.createElement('th');
+            th.textContent = formatShortDate(ymd);
+            headRow.appendChild(th);
+        });
+        const headTrend = document.createElement('th');
+        headTrend.textContent = '涨跌';
+        headRow.appendChild(headTrend);
+        thead.appendChild(headRow);
+
+        const tbody = document.createElement('tbody');
+        report.rows.forEach((row) => {
+            const tr = document.createElement('tr');
+            const metricCell = document.createElement('td');
+            metricCell.textContent = row.key || '';
+            tr.appendChild(metricCell);
+            (report.dates || []).forEach((ymd) => {
+                const td = document.createElement('td');
+                const val = row.values && row.values[ymd];
+                td.textContent = Number.isFinite(val) ? String(val) : '—';
+                tr.appendChild(td);
+            });
+            const trendCell = document.createElement('td');
+            trendCell.textContent = row.trend === 'up' ? '↑' : '';
+            tr.appendChild(trendCell);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        els.euAdsTableWrap.appendChild(table);
+    }
+
+    els.euAdsSuggestions.innerHTML = '';
+    const suggestions = (report && report.suggestions) || [];
+    if (suggestions.length) {
+        suggestions.forEach((item) => {
+            const li = document.createElement('li');
+            li.className = 'eu-ads-suggestion-item';
+            li.innerHTML = `
+                <strong>【建议，需你手动执行】${escapeHtml(item.country || '')}</strong>
+                <span>${escapeHtml(item.action || '')}</span>
+                <em>依据：${escapeHtml(item.evidence || '')}</em>
+                <em>复核：${escapeHtml(item.review || '')}</em>
+            `;
+            els.euAdsSuggestions.appendChild(li);
+        });
+    } else if (!state.euAdsLoading && report) {
+        const li = document.createElement('li');
+        li.className = 'eu-ads-suggestion-item';
+        li.textContent = '暂无额外建议，可继续观察。';
+        els.euAdsSuggestions.appendChild(li);
+    }
+
+    const footerParts = [];
+    if (report && report.fetchedAt) {
+        footerParts.push(`拉取时间：${new Date(report.fetchedAt).toLocaleString('zh-CN', { hour12: false })}`);
+    }
+    if (report && Array.isArray(report.failures) && report.failures.length) {
+        const failed = [...new Set(report.failures.map((item) => item.country).filter(Boolean))];
+        footerParts.push(`部分数据拉取失败：${failed.join('、')}`);
+    }
+    els.euAdsFooter.textContent = footerParts.join(' · ');
+}
+
+async function refreshEuAdsReport() {
+    if (state.euAdsLoading) return;
+    state.euAdsLoading = true;
+    renderEuAds();
+    try {
+        const payload = await window.desktopPet.fetchEuAdsReport();
+        applyEuAdsPayload(payload);
+    } catch (error) {
+        state.euAdsError = error.message || '拉取失败';
+    } finally {
+        state.euAdsLoading = false;
+        renderAll();
+    }
+}
+
 function renderTabs() {
     els.quickTabs.innerHTML = '';
     state.prompts.forEach((prompt) => {
@@ -171,9 +311,15 @@ function renderTabs() {
         button.innerHTML = `<strong>${prompt.label}</strong><span>${prompt.title}</span>`;
         button.addEventListener('click', () => {
             state.currentPromptKey = prompt.key;
-            state.viewMode = 'edit';
+            state.viewMode = prompt.key === 'euAdsReport' ? 'euAds' : 'edit';
             renderAll();
-            els.answerInput.focus();
+            if (state.viewMode === 'euAds') {
+                if (!state.euAdsPayload && !state.euAdsLoading) {
+                    refreshEuAdsReport();
+                }
+            } else {
+                els.answerInput.focus();
+            }
         });
         els.quickTabs.appendChild(button);
     });
@@ -287,9 +433,13 @@ function renderSummary() {
 function renderForm() {
     const prompt = currentPrompt();
     const isPreview = state.viewMode === 'preview';
+    const isEuAds = isEuAdsView();
     const editingEntry = currentEntry();
-    document.body.classList.toggle('mode-edit', !isPreview);
+    document.body.classList.toggle('mode-edit', !isPreview && !isEuAds);
     document.body.classList.toggle('mode-preview', isPreview);
+    document.body.classList.toggle('mode-eu-ads', isEuAds);
+
+    if (isEuAds) return;
 
     els.chatSubtitle.textContent = `${prompt?.label || ''} · ${prompt?.title || '记录任务'}`;
     els.questionBubble.textContent = isPreview
@@ -310,6 +460,7 @@ function renderForm() {
 function renderAll() {
     renderTabs();
     renderForm();
+    renderEuAds();
     renderSummary();
     renderTaskList();
 }
@@ -408,19 +559,33 @@ els.saveBtn.addEventListener('click', () => {
     saveCurrentAnswer();
 });
 
+els.euAdsRefreshBtn.addEventListener('click', () => {
+    refreshEuAdsReport();
+});
+
 window.desktopPet.onPrompt((prompt) => {
     state.currentPromptKey = prompt.key;
-    state.viewMode = 'edit';
+    state.viewMode = prompt.key === 'euAdsReport' ? 'euAds' : 'edit';
     state.summary = null;
     state.summaryHintText = '';
     resetDraft();
+    if (state.viewMode === 'euAds') {
+        state.euAdsLoading = true;
+    }
     renderAll();
-    els.answerInput.focus();
+    if (state.viewMode !== 'euAds') {
+        els.answerInput.focus();
+    }
 });
 
 window.desktopPet.onOpenChat((payload) => {
-    state.viewMode = payload?.viewMode === 'preview' ? 'preview' : 'edit';
-    state.currentPromptKey = payload?.promptKey || state.currentPromptKey;
+    const promptKey = payload?.promptKey || state.currentPromptKey;
+    if (promptKey === 'euAdsReport') {
+        state.viewMode = 'euAds';
+    } else {
+        state.viewMode = payload?.viewMode === 'preview' ? 'preview' : 'edit';
+    }
+    state.currentPromptKey = promptKey;
     if (payload?.resetDraft) {
         resetDraft();
     } else if (state.viewMode === 'edit' && !state.selectedEntryId) {
@@ -431,9 +596,19 @@ window.desktopPet.onOpenChat((payload) => {
         state.summaryHintText = '';
     }
     renderAll();
-    if (state.viewMode !== 'preview') {
+    if (state.viewMode === 'euAds') {
+        if (!state.euAdsPayload && !state.euAdsLoading) {
+            refreshEuAdsReport();
+        }
+    } else if (state.viewMode !== 'preview') {
         els.answerInput.focus();
     }
+});
+
+window.desktopPet.onEuAdsReport((payload) => {
+    applyEuAdsPayload(payload);
+    state.euAdsLoading = false;
+    renderAll();
 });
 
 window.desktopPet.onStateUpdated((payload) => {

@@ -14,6 +14,7 @@ let pointerStart = null;
 let clickTimer = null;
 
 function bubbleText(promptKey) {
+    if (promptKey === 'euAdsReport') return '欧洲广告日报来了';
     if (promptKey === 'tasks') return '来记一条任务呀';
     if (promptKey === 'progress') return '再补一条任务呀';
     return '点我记任务呀';
