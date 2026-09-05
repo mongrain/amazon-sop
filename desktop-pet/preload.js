@@ -13,8 +13,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
     onPrompt: (callback) => ipcRenderer.on('pet:prompt', (_event, payload) => callback(payload)),
     onOpenChat: (callback) => ipcRenderer.on('pet:open-chat', (_event, payload) => callback(payload)),
     onStateUpdated: (callback) => ipcRenderer.on('pet:state-updated', (_event, payload) => callback(payload)),
-    fetchEuAdsReport: () => ipcRenderer.invoke('pet:fetch-eu-ads-report'),
-    onEuAdsReport: (callback) => ipcRenderer.on('pet:eu-ads-report', (_event, payload) => callback(payload)),
+    generateWeeklySummary: () => ipcRenderer.invoke('pet:generate-weekly-summary'),
     onWalking: (callback) => ipcRenderer.on('pet:walking', (_event, payload) => callback(payload)),
     onChatVisibility: (callback) => ipcRenderer.on('pet:chat-visibility', (_event, payload) => callback(payload))
 });

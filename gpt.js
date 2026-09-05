@@ -7,6 +7,15 @@ const GPT_API_URL = process.env.GPT_API_URL || 'http://localhost:8000/v1/chat/co
 const GPT_API_KEY = process.env.GPT_API_KEY || 'eb3bf85f539499df36e2eec15669d57e';
 const GPT_MODEL = process.env.GPT_MODEL || 'doubao';
 
+function deriveResponsesApiUrl(chatCompletionsUrl) {
+    const url = String(chatCompletionsUrl || '').trim().replace(/\/+$/, '');
+    if (url.endsWith('/chat/completions')) return `${url.slice(0, -'/chat/completions'.length)}/responses`;
+    return `${url}/responses`;
+}
+
+const GPT_RESPONSES_API_URL = String(process.env.GPT_RESPONSES_API_URL || '').trim()
+    || deriveResponsesApiUrl(GPT_API_URL);
+
 const COMPARE_PROMPT = '你是一位精通亚马逊店铺（Storefront）视觉分析的专家。我将按顺序提供同一店铺的两张主页截图：第一张是「历史快照」（上次监控），第二张是「最新快照」（本次监控）。请对比二者，判断该商家是否针对大促或特定节日活动进行了店面装修或营销模块调整。\n【分析核心原则：抓大放小】\n1. 严格忽略：由于网络加载延迟、图片或商品元素未完全加载（如发灰/空白占位符）、字体渲染差异、响应式排布微调导致的非实质性视觉差异。\n2. 专注于：实质性的营销视觉物料、大促氛围和模块布局的变动。\n【大促/节日信号侦测重点】\n- 横幅（Banner）变动：是否更换了横幅？是否融入了特定的促销或节日元素（例如：Prime Day 元素、复活节 Easter、黑色星期五 Black Friday 等）。\n- 促销模块增减：是否在店铺首页显著位置增加了促销专区、限时抢购模块或变更了主推品。\n这里客观性非常重要，如果想都是同一个节日元素（如圣诞节），均认为同一种状态\n【输出表述要求】\nchange_details 与 summary 中禁止使用「图A」「图B」等技术代号；如需指代图片，只能使用「历史快照」「最新快照」，或直接描述从历史到最新发生了什么变化。\n【输出格式要求】\n必须直接返回一个标准的 JSON 对象，不要包含任何 Markdown 格式标记（如 ```json）或前后解释性文本。JSON 结构如下：\n{\n  "is_changed": true,\n  "promotion_type": "Prime Day / Easter / None",\n  "change_details": [\n    "具体变动点1（如：最新快照更换了首页顶部横幅，增加了复活节彩蛋与折扣文案）"\n  ],\n  "summary": "此处填写修改内容的精简总结。必须严格控制在 50 个汉字以内。"\n}';
 
 function parseGptJsonContent(content) {
@@ -94,9 +103,9 @@ async function compareStorefrontImages(imageUrlA, imageUrlB) {
     return compareStorefrontImagesBySiderAi(imageUrlA, imageUrlB);
 }
 
-async function chat(messages) {
+async function chat(messages, { model = GPT_MODEL } = {}) {
     const payload = {
-        model: GPT_MODEL,
+        model,
         messages,
         stream: false
     };
@@ -125,13 +134,49 @@ async function chat(messages) {
 }
 
 async function chatCompletionJson(userPrompt, userContent, { model = GPT_MODEL } = {}) {
-    const content = await chat([{ role: 'user', content: `${userPrompt}\n\n${userContent}` }]);
+    const content = await chat([{ role: 'user', content: `${userPrompt}\n\n${userContent}` }], { model });
     return parseGptJsonContent(content);
 }
 
 async function chatCompletionText(systemPrompt, userContent, { model = GPT_MODEL } = {}) {
-    const content = await chat([{ role: 'user', content: `${systemPrompt}\n\n${userContent}` }]);
+    const content = await chat([{ role: 'user', content: `${systemPrompt}\n\n${userContent}` }], { model });
     return String(content).trim();
 }
 
-module.exports = { compareStorefrontImages, parseGptJsonContent, chatCompletionJson, chatCompletionText, chat };
+function getResponsesOutputText(data) {
+    if (data?.output_text) return String(data.output_text).trim();
+    const text = (Array.isArray(data?.output) ? data.output : [])
+        .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+        .filter((item) => item?.type === 'output_text')
+        .map((item) => item.text)
+        .join('');
+    return String(text || '').trim();
+}
+
+async function responsesCompletionJson(instructions, input, { model = GPT_MODEL } = {}) {
+    const response = await axios.post(GPT_RESPONSES_API_URL, {
+        model,
+        instructions,
+        input: String(input || ''),
+        store: false
+    }, {
+        headers: {
+            Authorization: `Bearer ${GPT_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        timeout: Number(process.env.GPT_TIMEOUT_MS || 500000)
+    });
+    const content = getResponsesOutputText(response.data);
+    return parseGptJsonContent(content);
+}
+
+module.exports = {
+    compareStorefrontImages,
+    parseGptJsonContent,
+    chatCompletionJson,
+    chatCompletionText,
+    responsesCompletionJson,
+    getResponsesOutputText,
+    deriveResponsesApiUrl,
+    chat
+};

@@ -8,17 +8,20 @@ const state = {
     viewMode: 'edit',
     selectedEntryId: '',
     summary: null,
+    weeklySummary: null,
+    weeklySummaryLoading: false,
     summaryHintText: '',
     draft: {
         time: '',
         content: ''
     },
-    euAdsPayload: null,
-    euAdsLoading: false,
-    euAdsError: ''
+    petTitle: '',
+    petAvatar: ''
 };
 
 const els = {
+    chatTitle: document.getElementById('chatTitle'),
+    avatarBadge: document.getElementById('avatarBadge'),
     chatSubtitle: document.getElementById('chatSubtitle'),
     closeChatBtn: document.getElementById('closeChatBtn'),
     questionBubble: document.getElementById('questionBubble'),
@@ -31,18 +34,18 @@ const els = {
     newEntryBtn: document.getElementById('newEntryBtn'),
     taskList: document.getElementById('taskList'),
     generateSummaryBtn: document.getElementById('generateSummaryBtn'),
+    generateWeeklySummaryBtn: document.getElementById('generateWeeklySummaryBtn'),
     copySummaryBtn: document.getElementById('copySummaryBtn'),
     summaryHint: document.getElementById('summaryHint'),
     summaryPanel: document.getElementById('summaryPanel'),
     summaryTableWrap: document.getElementById('summaryTableWrap'),
+    weeklySummaryPanel: document.getElementById('weeklySummaryPanel'),
+    weeklySummaryTitle: document.getElementById('weeklySummaryTitle'),
+    weeklySummaryTableWrap: document.getElementById('weeklySummaryTableWrap'),
     timeShortcut1230: document.getElementById('timeShortcut1230'),
     timeShortcut1830: document.getElementById('timeShortcut1830'),
     euAdsPanel: document.getElementById('euAdsPanel'),
-    euAdsRefreshBtn: document.getElementById('euAdsRefreshBtn'),
-    euAdsHint: document.getElementById('euAdsHint'),
-    euAdsTableWrap: document.getElementById('euAdsTableWrap'),
-    euAdsSuggestions: document.getElementById('euAdsSuggestions'),
-    euAdsFooter: document.getElementById('euAdsFooter')
+    euAdsConfirmBtn: document.getElementById('euAdsConfirmBtn')
 };
 
 function getPrompt(promptKey) {
@@ -149,6 +152,17 @@ function buildSummaryClipboardPayload(summary) {
     };
 }
 
+function buildWeeklySummaryClipboardPayload(summary) {
+    const rows = summary?.rows || [];
+    if (!rows.length) return { text: '', html: '' };
+    const headers = ['工作主题', '本周进展', '状态', '下周行动'];
+    const htmlRows = rows.map((row) => `<tr><td>${escapeHtml(row.topic)}</td><td>${escapeHtml(row.progress)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.nextAction)}</td></tr>`).join('');
+    return {
+        text: [`本周 AI 总结（${summary.period || ''}）`, headers.join('\t'), ...rows.map((row) => [row.topic, row.progress, row.status, row.nextAction].join('\t'))].join('\n'),
+        html: `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;"><caption>本周 AI 总结（${escapeHtml(summary.period || '')}）</caption><thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead><tbody>${htmlRows}</tbody></table>`
+    };
+}
+
 function syncDraftFromInputs() {
     state.draft.time = String(els.timeInput.value || '').trim();
     state.draft.content = String(els.answerInput.value || '').trim();
@@ -170,131 +184,10 @@ function isEuAdsView() {
     return state.viewMode === 'euAds';
 }
 
-function formatShortDate(ymd) {
-    const parts = String(ymd || '').split('-');
-    if (parts.length !== 3) return ymd || '';
-    return `${parts[1]}-${parts[2]}`;
-}
-
-function applyEuAdsPayload(payload) {
-    state.euAdsError = String(payload?.error || '').trim();
-    state.euAdsPayload = payload?.report || null;
-}
-
 function renderEuAds() {
     const active = isEuAdsView();
     els.euAdsPanel.classList.toggle('hidden', !active);
     if (!active) return;
-
-    const prompt = currentPrompt();
-    els.chatSubtitle.textContent = `${prompt?.label || '12:20'} · ${prompt?.title || '欧洲广告日报'}`;
-    els.questionBubble.textContent = prompt?.question || '欧洲站广告近 7 日汇总来了。';
-
-    if (state.euAdsLoading) {
-        els.euAdsHint.textContent = '正在拉取欧洲站广告数据…';
-        els.euAdsRefreshBtn.disabled = true;
-        els.euAdsRefreshBtn.textContent = '拉取中…';
-        return;
-    }
-
-    els.euAdsRefreshBtn.disabled = false;
-    els.euAdsRefreshBtn.textContent = '刷新';
-
-    if (state.euAdsError) {
-        els.euAdsHint.textContent = state.euAdsError;
-    } else if (state.euAdsPayload) {
-        els.euAdsHint.textContent = '以下为近 7 个完整自然日的广告汇总（曝光 / 点击 / 出单）。';
-    } else {
-        els.euAdsHint.textContent = '点击刷新拉取最新数据。';
-    }
-
-    els.euAdsTableWrap.innerHTML = '';
-    const report = state.euAdsPayload;
-    if (report && Array.isArray(report.rows) && report.rows.length) {
-        const table = document.createElement('table');
-        table.className = 'eu-ads-table';
-        const thead = document.createElement('thead');
-        const headRow = document.createElement('tr');
-        const headMetric = document.createElement('th');
-        headMetric.textContent = '国家 · 指标';
-        headRow.appendChild(headMetric);
-        (report.dates || []).forEach((ymd) => {
-            const th = document.createElement('th');
-            th.textContent = formatShortDate(ymd);
-            headRow.appendChild(th);
-        });
-        const headTrend = document.createElement('th');
-        headTrend.textContent = '涨跌';
-        headRow.appendChild(headTrend);
-        thead.appendChild(headRow);
-
-        const tbody = document.createElement('tbody');
-        report.rows.forEach((row) => {
-            const tr = document.createElement('tr');
-            const metricCell = document.createElement('td');
-            metricCell.textContent = row.key || '';
-            tr.appendChild(metricCell);
-            (report.dates || []).forEach((ymd) => {
-                const td = document.createElement('td');
-                const val = row.values && row.values[ymd];
-                td.textContent = Number.isFinite(val) ? String(val) : '—';
-                tr.appendChild(td);
-            });
-            const trendCell = document.createElement('td');
-            trendCell.textContent = row.trend === 'up' ? '↑' : '';
-            tr.appendChild(trendCell);
-            tbody.appendChild(tr);
-        });
-        table.appendChild(thead);
-        table.appendChild(tbody);
-        els.euAdsTableWrap.appendChild(table);
-    }
-
-    els.euAdsSuggestions.innerHTML = '';
-    const suggestions = (report && report.suggestions) || [];
-    if (suggestions.length) {
-        suggestions.forEach((item) => {
-            const li = document.createElement('li');
-            li.className = 'eu-ads-suggestion-item';
-            li.innerHTML = `
-                <strong>【建议，需你手动执行】${escapeHtml(item.country || '')}</strong>
-                <span>${escapeHtml(item.action || '')}</span>
-                <em>依据：${escapeHtml(item.evidence || '')}</em>
-                <em>复核：${escapeHtml(item.review || '')}</em>
-            `;
-            els.euAdsSuggestions.appendChild(li);
-        });
-    } else if (!state.euAdsLoading && report) {
-        const li = document.createElement('li');
-        li.className = 'eu-ads-suggestion-item';
-        li.textContent = '暂无额外建议，可继续观察。';
-        els.euAdsSuggestions.appendChild(li);
-    }
-
-    const footerParts = [];
-    if (report && report.fetchedAt) {
-        footerParts.push(`拉取时间：${new Date(report.fetchedAt).toLocaleString('zh-CN', { hour12: false })}`);
-    }
-    if (report && Array.isArray(report.failures) && report.failures.length) {
-        const failed = [...new Set(report.failures.map((item) => item.country).filter(Boolean))];
-        footerParts.push(`部分数据拉取失败：${failed.join('、')}`);
-    }
-    els.euAdsFooter.textContent = footerParts.join(' · ');
-}
-
-async function refreshEuAdsReport() {
-    if (state.euAdsLoading) return;
-    state.euAdsLoading = true;
-    renderEuAds();
-    try {
-        const payload = await window.desktopPet.fetchEuAdsReport();
-        applyEuAdsPayload(payload);
-    } catch (error) {
-        state.euAdsError = error.message || '拉取失败';
-    } finally {
-        state.euAdsLoading = false;
-        renderAll();
-    }
 }
 
 function renderTabs() {
@@ -311,11 +204,7 @@ function renderTabs() {
             state.currentPromptKey = prompt.key;
             state.viewMode = prompt.key === 'euAdsReport' ? 'euAds' : 'edit';
             renderAll();
-            if (state.viewMode === 'euAds') {
-                if (!state.euAdsPayload && !state.euAdsLoading) {
-                    refreshEuAdsReport();
-                }
-            } else {
+            if (state.viewMode !== 'euAds') {
                 els.answerInput.focus();
             }
         });
@@ -386,46 +275,75 @@ function renderSummary() {
     const isPreview = state.viewMode === 'preview';
     const hasEntries = (state.record.taskEntries || []).length > 0;
     els.generateSummaryBtn.disabled = !isPreview || !hasEntries;
-    els.copySummaryBtn.disabled = !isPreview || !state.summary;
+    els.generateWeeklySummaryBtn.disabled = !isPreview || state.weeklySummaryLoading;
+    els.generateWeeklySummaryBtn.textContent = state.weeklySummaryLoading ? 'AI 总结生成中…' : '生成本周 AI 总结';
+    els.copySummaryBtn.disabled = !isPreview || !(state.weeklySummary || state.summary);
     els.summaryHint.textContent = isPreview ? state.summaryHintText : '';
     els.summaryHint.classList.toggle('hidden', !isPreview || !state.summaryHintText);
     els.summaryPanel.classList.toggle('hidden', !isPreview || !state.summary);
 
     if (!isPreview || !state.summary) {
         els.summaryTableWrap.innerHTML = '';
-        return;
+    } else {
+        const header = document.createElement('table');
+        header.className = 'summary-table';
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        const headTask = document.createElement('th');
+        headTask.textContent = '任务名称';
+        const headCompletion = document.createElement('th');
+        headCompletion.textContent = '今日完成情况';
+        headRow.appendChild(headTask);
+        headRow.appendChild(headCompletion);
+        thead.appendChild(headRow);
+
+        const tbody = document.createElement('tbody');
+        state.summary.rows.forEach((row) => {
+            const tr = document.createElement('tr');
+            const taskCell = document.createElement('td');
+            taskCell.textContent = row.taskName;
+            const completionCell = document.createElement('td');
+            completionCell.textContent = row.completion;
+            tr.appendChild(taskCell);
+            tr.appendChild(completionCell);
+            tbody.appendChild(tr);
+        });
+
+        header.appendChild(thead);
+        header.appendChild(tbody);
+        els.summaryTableWrap.innerHTML = '';
+        els.summaryTableWrap.appendChild(header);
     }
 
-    const header = document.createElement('table');
-    header.className = 'summary-table';
-
+    const weekly = state.weeklySummary;
+    els.weeklySummaryPanel.classList.toggle('hidden', !isPreview || !weekly);
+    els.weeklySummaryTableWrap.innerHTML = '';
+    if (!isPreview || !weekly) return;
+    els.weeklySummaryTitle.textContent = `本周 AI 总结表格 · ${weekly.period || ''}`;
+    const table = document.createElement('table');
+    table.className = 'summary-table weekly-summary-table';
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    const headTask = document.createElement('th');
-    headTask.textContent = '任务名称';
-    const headCompletion = document.createElement('th');
-    headCompletion.textContent = '今日完成情况';
-    headRow.appendChild(headTask);
-    headRow.appendChild(headCompletion);
+    ['工作主题', '本周进展', '状态', '下周行动'].forEach((label) => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        headRow.appendChild(th);
+    });
     thead.appendChild(headRow);
-
     const tbody = document.createElement('tbody');
-    state.summary.rows.forEach((row) => {
+    weekly.rows.forEach((row) => {
         const tr = document.createElement('tr');
-        const taskCell = document.createElement('td');
-        taskCell.textContent = row.taskName;
-        const completionCell = document.createElement('td');
-        completionCell.textContent = row.completion;
-        tr.appendChild(taskCell);
-        tr.appendChild(completionCell);
+        [row.topic, row.progress, row.status, row.nextAction].forEach((value) => {
+            const td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+        });
         tbody.appendChild(tr);
     });
-
-    header.appendChild(thead);
-    header.appendChild(tbody);
-
-    els.summaryTableWrap.innerHTML = '';
-    els.summaryTableWrap.appendChild(header);
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    els.weeklySummaryTableWrap.appendChild(table);
 }
 
 function renderForm() {
@@ -456,6 +374,12 @@ function renderForm() {
 }
 
 function renderAll() {
+    if (els.chatTitle && state.petTitle) {
+        els.chatTitle.textContent = state.petTitle;
+    }
+    if (els.avatarBadge && state.petAvatar) {
+        els.avatarBadge.textContent = state.petAvatar;
+    }
     renderTabs();
     renderForm();
     renderEuAds();
@@ -484,6 +408,7 @@ async function saveCurrentAnswer() {
             content: state.draft.content
         });
         state.summary = null;
+        state.weeklySummary = null;
         state.summaryHintText = '';
         const matched = state.record.taskEntries.find((item) => (
             item.id === state.selectedEntryId
@@ -504,6 +429,8 @@ async function boot() {
     state.record = payload.record || state.record;
     state.prompts = payload.prompts || [];
     state.currentPromptKey = payload.currentPromptKey || state.currentPromptKey;
+    state.petTitle = payload.petTitle || state.petTitle;
+    state.petAvatar = payload.petAvatar || state.petAvatar;
     resetDraft();
     renderAll();
 }
@@ -525,15 +452,33 @@ els.generateSummaryBtn.addEventListener('click', () => {
     renderAll();
 });
 
+els.generateWeeklySummaryBtn.addEventListener('click', async () => {
+    if (state.weeklySummaryLoading) return;
+    state.weeklySummaryLoading = true;
+    state.summaryHintText = '正在读取近 7 天任务，并交给 AI 汇总…';
+    renderAll();
+    try {
+        state.weeklySummary = await window.desktopPet.generateWeeklySummary();
+        state.summaryHintText = '本周 AI 总结表格已生成。';
+    } catch (error) {
+        state.summaryHintText = error.message || '本周 AI 总结生成失败';
+    } finally {
+        state.weeklySummaryLoading = false;
+        renderAll();
+    }
+});
+
 els.copySummaryBtn.addEventListener('click', async () => {
-    if (!state.summary) {
-        state.summaryHintText = '请先生成今日总结';
+    if (!state.weeklySummary && !state.summary) {
+        state.summaryHintText = '请先生成一份总结';
         renderAll();
         return;
     }
 
     try {
-        const payload = buildSummaryClipboardPayload(state.summary);
+        const payload = state.weeklySummary
+            ? buildWeeklySummaryClipboardPayload(state.weeklySummary)
+            : buildSummaryClipboardPayload(state.summary);
         await window.desktopPet.copySummary(payload);
         state.summaryHintText = '总结已经复制好了，直接 Ctrl+V 粘贴即可。';
         renderAll();
@@ -557,19 +502,17 @@ els.saveBtn.addEventListener('click', () => {
     saveCurrentAnswer();
 });
 
-els.euAdsRefreshBtn.addEventListener('click', () => {
-    refreshEuAdsReport();
+els.euAdsConfirmBtn.addEventListener('click', () => {
+    window.desktopPet.hideChat();
 });
 
 window.desktopPet.onPrompt((prompt) => {
     state.currentPromptKey = prompt.key;
     state.viewMode = prompt.key === 'euAdsReport' ? 'euAds' : 'edit';
     state.summary = null;
+    state.weeklySummary = null;
     state.summaryHintText = '';
     resetDraft();
-    if (state.viewMode === 'euAds') {
-        state.euAdsLoading = true;
-    }
     renderAll();
     if (state.viewMode !== 'euAds') {
         els.answerInput.focus();
@@ -591,28 +534,21 @@ window.desktopPet.onOpenChat((payload) => {
     }
     if (state.viewMode !== 'preview') {
         state.summary = null;
+        state.weeklySummary = null;
         state.summaryHintText = '';
     }
     renderAll();
-    if (state.viewMode === 'euAds') {
-        if (!state.euAdsPayload && !state.euAdsLoading) {
-            refreshEuAdsReport();
-        }
-    } else if (state.viewMode !== 'preview') {
+    if (state.viewMode !== 'euAds' && state.viewMode !== 'preview') {
         els.answerInput.focus();
     }
-});
-
-window.desktopPet.onEuAdsReport((payload) => {
-    applyEuAdsPayload(payload);
-    state.euAdsLoading = false;
-    renderAll();
 });
 
 window.desktopPet.onStateUpdated((payload) => {
     state.record = payload.record || state.record;
     state.prompts = payload.prompts || state.prompts;
     state.currentPromptKey = payload.currentPromptKey || state.currentPromptKey;
+    state.petTitle = payload.petTitle || state.petTitle;
+    state.petAvatar = payload.petAvatar || state.petAvatar;
     if (state.selectedEntryId) {
         const selected = currentEntry();
         if (selected) {

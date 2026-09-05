@@ -32506,10 +32506,30 @@ void main() {
   var animRotX = 0;
   var animRotZ = 0;
   var animRotY = 0;
+  var PET_CHARACTER_ROOTS = {
+    chiikawa: "Chiikawa",
+    hachiware: "Hachiware",
+    usagi: "Usagi"
+  };
   function showPetError(message) {
     console.error(message);
     els.petStatus.textContent = "\u6A21\u578B\u52A0\u8F7D\u5931\u8D25";
     els.petStatus.hidden = false;
+  }
+  function getSelectedPetModelId() {
+    const id = String(new URLSearchParams(window.location.search).get("model") || "").trim().toLowerCase();
+    return PET_CHARACTER_ROOTS[id] ? id : "chiikawa";
+  }
+  function pickPetCharacterRoot(gltfScene, modelId) {
+    const rootName = PET_CHARACTER_ROOTS[modelId] || PET_CHARACTER_ROOTS.chiikawa;
+    let selected = null;
+    gltfScene.traverse((node) => {
+      if (node.name !== "Chiikawa" && node.name !== "Hachiware" && node.name !== "Usagi") return;
+      const isSelected = node.name === rootName;
+      node.visible = isSelected;
+      if (isSelected) selected = node;
+    });
+    return selected;
   }
   function startThreePet() {
     const renderer = new WebGLRenderer({
@@ -32527,12 +32547,9 @@ void main() {
     const petRoot = new Group();
     scene.add(petRoot);
     new GLTFLoader().load("./scene.gltf", (gltf) => {
-      gltf.scene.traverse((node) => {
-        if (node.name.startsWith("Hachiware") || node.name.startsWith("Usagi") || node.name.startsWith("Mouth.003") || node.name.startsWith("Eyes.002")) {
-          node.visible = false;
-        }
-      });
-      const box = new Box3().setFromObject(gltf.scene);
+      const characterRoot = pickPetCharacterRoot(gltf.scene, getSelectedPetModelId());
+      gltf.scene.updateMatrixWorld(true);
+      const box = new Box3().setFromObject(characterRoot || gltf.scene);
       const center = box.getCenter(new Vector3());
       const size = box.getSize(new Vector3());
       gltf.scene.position.sub(center);

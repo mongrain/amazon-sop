@@ -4,8 +4,8 @@ const { pathToFileURL } = require('url');
 const { app, BrowserWindow, ipcMain, Notification, Menu, Tray, nativeImage, screen, clipboard, ClipboardItem, protocol, net } = require('electron');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-const { fetchEuAdsDailyReport } = require('../service/eu-ads-daily-report');
 const { mergeTaskEntries } = require('../service/desktop-pet-sync');
+const { generateWeeklyReview } = require('../service/desktop-pet-weekly-review');
 
 const RENDERER_ROOT = path.join(__dirname, 'renderer');
 const PET_SCHEME = 'pet-app';
@@ -35,7 +35,49 @@ function parseVisibleHours(raw) {
     return { start, end };
 }
 
-const PET_VISIBLE_HOURS = parseVisibleHours(process.env.DESKTOP_PET_VISIBLE_HOURS);
+// 开箱即用默认 07:00–21:00；可通过环境变量改为任意时段（也支持 21:00-07:00 跨夜）。
+const PET_VISIBLE_HOURS = parseVisibleHours(process.env.DESKTOP_PET_VISIBLE_HOURS || '7:00-21:00');
+
+const PET_MODEL_IDS = ['chiikawa', 'hachiware', 'usagi'];
+const PET_MODEL_LABELS = {
+    chiikawa: '小吉',
+    hachiware: '小八',
+    usagi: '乌萨奇'
+};
+const PET_MODEL_AVATARS = {
+    chiikawa: '吉',
+    hachiware: '八',
+    usagi: '乌'
+};
+
+function getPetLabel(model = getTodayPetModel()) {
+    return PET_MODEL_LABELS[model] || PET_MODEL_LABELS.chiikawa;
+}
+
+function parsePetModelPool(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return [...PET_MODEL_IDS];
+    const seen = new Set();
+    const pool = [];
+    for (const part of text.split(',')) {
+        const id = part.trim().toLowerCase();
+        if (!id) continue;
+        if (!PET_MODEL_IDS.includes(id)) {
+            console.warn(`[desktop-pet] DESKTOP_PET_MODELS 含未知模型「${part.trim()}」，已忽略`);
+            continue;
+        }
+        if (seen.has(id)) continue;
+        seen.add(id);
+        pool.push(id);
+    }
+    if (!pool.length) {
+        console.warn('[desktop-pet] DESKTOP_PET_MODELS 无有效模型，回退 chiikawa');
+        return ['chiikawa'];
+    }
+    return pool;
+}
+
+const PET_MODEL_POOL = parsePetModelPool(process.env.DESKTOP_PET_MODELS);
 
 // 必须在 app ready 之前注册，才能用自定义协议安全加载本地 glTF，无需关闭 webSecurity。
 protocol.registerSchemesAsPrivileged([
@@ -67,11 +109,10 @@ function registerPetProtocol() {
 const PROMPTS = [
     {
         key: 'euAdsReport',
-        label: '12:20',
-        title: '欧洲广告日报',
-        question: '欧洲站广告近 7 日汇总来了。',
-        message: '欧洲站广告日报到了',
-        placeholder: '',
+        label: '',
+        title: '欧洲站提醒',
+        question: '记得查看一下欧洲站广告情况。',
+        message: '记得查看欧洲站广告情况',
         hour: 12,
         minute: 20
     },
@@ -109,8 +150,7 @@ let wanderSegmentStartX = null;
 let wanderSegmentGoalPx = 0;
 let petHovered = false;
 let currentPromptKey = '';
-let lastEuAdsReport = null;
-let euAdsFetchInFlight = null;
+let loadedPetModelDate = '';
 
 function ensureStorePath() {
     const storePath = path.join(app.getPath('userData'), 'desktop-pet-state.json');
@@ -137,6 +177,35 @@ function getDateKey(date = new Date()) {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+}
+
+function getRecentDateKeys(days = 7) {
+    const keys = [];
+    const base = new Date();
+    base.setHours(12, 0, 0, 0);
+    for (let offset = days - 1; offset >= 0; offset -= 1) {
+        const date = new Date(base);
+        date.setDate(base.getDate() - offset);
+        keys.push(getDateKey(date));
+    }
+    return keys;
+}
+
+function getTodayPetModel() {
+    const store = readStore();
+    const date = getDateKey();
+    const savedModel = String(store.appearance?.model || '');
+    if (store.appearance?.date === date && PET_MODEL_POOL.includes(savedModel)) {
+        return savedModel;
+    }
+    // 多角色时避免连续两天看起来完全没有变化。
+    const candidates = PET_MODEL_POOL.length > 1
+        ? PET_MODEL_POOL.filter((model) => model !== savedModel)
+        : PET_MODEL_POOL;
+    const model = candidates[Math.floor(Math.random() * candidates.length)];
+    store.appearance = { date, model };
+    writeStore(store);
+    return model;
 }
 
 function formatTimeFromPrompt(promptKey = '') {
@@ -349,6 +418,34 @@ async function syncTodayTasks() {
     }
 }
 
+async function getWeeklyTaskRecords() {
+    const dates = getRecentDateKeys();
+    const store = readStore();
+    const records = [];
+
+    for (const date of dates) {
+        let entries = normalizeRecord(date, store.records?.[date] || {}).taskEntries;
+        if (desktopPetSyncConfigured) {
+            try {
+                await loginDesktopPet(false);
+                let response = await desktopPetApi(`/api/desktop-pet/tasks?date=${encodeURIComponent(date)}`, { method: 'GET' });
+                if (response.status === 401) {
+                    await loginDesktopPet(true);
+                    response = await desktopPetApi(`/api/desktop-pet/tasks?date=${encodeURIComponent(date)}`, { method: 'GET' });
+                }
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || `拉取失败 HTTP ${response.status}`);
+                entries = mergeTaskEntries(entries, payload.entries || []);
+                writeTodayTaskEntries(date, entries);
+            } catch (error) {
+                console.warn(`[desktop-pet] 周总结同步 ${date} 失败，使用本地记录：${error.message || error}`);
+            }
+        }
+        records.push({ date, entries });
+    }
+    return records;
+}
+
 function reminderAt(prompt, base = new Date()) {
     const date = new Date(base);
     date.setHours(prompt.hour, prompt.minute, 0, 0);
@@ -368,12 +465,22 @@ function markPromptSent(promptKey) {
     writeStore(store);
 }
 
-function syncStateToWindows() {
-    const payload = {
+function getChatSyncPayload() {
+    const petModel = getTodayPetModel();
+    const petLabel = getPetLabel(petModel);
+    return {
         ...getTodayState(),
         prompts: PROMPTS,
-        currentPromptKey
+        currentPromptKey,
+        petModel,
+        petLabel,
+        petAvatar: PET_MODEL_AVATARS[petModel] || PET_MODEL_AVATARS.chiikawa,
+        petTitle: `${petLabel}来上班了`
     };
+}
+
+function syncStateToWindows() {
+    const payload = getChatSyncPayload();
     petWindow?.webContents.send('pet:state-updated', payload);
     chatWindow?.webContents.send('pet:state-updated', payload);
 }
@@ -510,13 +617,13 @@ function startPetWander() {
             petWindow.setPosition(x, y);
         }
         petWindow.webContents.send('pet:walking', { moving: true, direction: dx >= 0 ? 'right' : 'left' });
-    }, 32);
+    }, 64);
 }
 
 function getChatPosition(viewMode = '') {
     const petBounds = petWindow ? petWindow.getBounds() : getPetPosition();
     const width = 360;
-    const height = currentPromptKey === 'euAdsReport' ? 470 : (viewMode === 'preview' ? 700 : 280);
+    const height = currentPromptKey === 'euAdsReport' ? 220 : (viewMode === 'preview' ? 700 : 280);
     const display = screen.getDisplayNearestPoint({
         x: petBounds.x + Math.round(petBounds.width / 2),
         y: petBounds.y + Math.round(petBounds.height / 2)
@@ -566,11 +673,11 @@ function createTray() {
     if (tray) return;
     const image = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAAgklEQVR4AWP4TwAw/P//PwMDA8MABYz8T0L4H4j/f2BgYHjPwMDwH0YGBob/DgYGhv8MDAz/GRgYGJ4zMDAw/MfAwPAPjIyM+M/AwMDxH4mJieE/AwPDf0ZGRv+BmZmZ4T8DA8N/JiYm/gfEGBkY/jP+/v8PDAwMnG5gYGD4DwMDw38YGBiYAwAAd20mSA1hKUsAAAAASUVORK5CYII=');
     tray = new Tray(image);
-    tray.setToolTip('吉伊卡哇工作宠物');
+    tray.setToolTip(`${getPetLabel()}工作宠物`);
     tray.on('double-click', () => showChatWindow(currentPromptKey || 'tasks'));
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: '打开聊天框', click: () => showChatWindow(currentPromptKey || 'tasks') },
-        { label: '欧洲广告日报', click: () => showChatWindow('euAdsReport') },
+        { label: '欧洲站提醒', click: () => showChatWindow('euAdsReport') },
         {
             label: '隐藏聊天框',
             click: () => {
@@ -606,7 +713,7 @@ function createPetWindow() {
         }
     });
 
-    petWindow.loadURL(`${PET_SCHEME}://localhost/pet.html`);
+    loadPetModelForToday();
     petWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
         if (level >= 2) {
             console.error(`[桌宠渲染 ${sourceId}:${line}] ${message}`);
@@ -622,6 +729,21 @@ function createPetWindow() {
     petWindow.on('closed', () => {
         petWindow = null;
     });
+}
+
+function loadPetModelForToday() {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    const date = getDateKey();
+    const model = getTodayPetModel();
+    loadedPetModelDate = date;
+    petWindow.loadURL(`${PET_SCHEME}://localhost/pet.html?model=${encodeURIComponent(model)}`);
+}
+
+function refreshPetModelForNewDay() {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    if (loadedPetModelDate !== getDateKey()) {
+        loadPetModelForToday();
+    }
 }
 
 function createChatWindow() {
@@ -690,7 +812,7 @@ function triggerPrompt(prompt) {
     markPromptSent(prompt.key);
     if (Notification.isSupported()) {
         const notification = new Notification({
-            title: `吉伊卡哇 · ${prompt.title}`,
+            title: `${getPetLabel()} · ${prompt.title}`,
             body: prompt.message,
             silent: false
         });
@@ -700,40 +822,6 @@ function triggerPrompt(prompt) {
     petWindow?.webContents.send('pet:prompt', prompt);
     chatWindow?.webContents.send('pet:prompt', prompt);
     showChatWindow(prompt.key);
-    if (prompt.key === 'euAdsReport') {
-        prefetchEuAdsReport();
-    }
-}
-
-async function requestEuAdsReport() {
-    const url = String(process.env.YANJUN_MCP_URL || '').trim();
-    if (!url) {
-        return { error: '未配置领星网关', report: lastEuAdsReport };
-    }
-    try {
-        const report = await fetchEuAdsDailyReport({ todayYmd: getDateKey() });
-        lastEuAdsReport = report;
-        return { report, error: '' };
-    } catch (error) {
-        return {
-            error: error.message || '拉取欧洲广告日报失败',
-            report: lastEuAdsReport
-        };
-    }
-}
-
-function prefetchEuAdsReport() {
-    if (euAdsFetchInFlight) return euAdsFetchInFlight;
-    euAdsFetchInFlight = requestEuAdsReport()
-        .then((payload) => {
-            chatWindow?.webContents.send('pet:eu-ads-report', payload);
-            petWindow?.webContents.send('pet:eu-ads-report', payload);
-            return payload;
-        })
-        .finally(() => {
-            euAdsFetchInFlight = null;
-        });
-    return euAdsFetchInFlight;
 }
 
 function startReminderLoop() {
@@ -754,10 +842,15 @@ function startReminderLoop() {
 function isPetHiddenForToday(now = new Date()) {
     if (!PET_VISIBLE_HOURS) return false;
     const minutes = now.getHours() * 60 + now.getMinutes();
-    return minutes < PET_VISIBLE_HOURS.start || minutes > PET_VISIBLE_HOURS.end;
+    const { start, end } = PET_VISIBLE_HOURS;
+    const isVisible = start <= end
+        ? minutes >= start && minutes <= end
+        : minutes >= start || minutes <= end;
+    return !isVisible;
 }
 
 function applyPetSchedule(now = new Date()) {
+    refreshPetModelForNewDay();
     if (isPetHiddenForToday(now)) {
         petWindow?.hide();
         chatWindow?.hide();
@@ -771,11 +864,7 @@ function applyPetSchedule(now = new Date()) {
 
 ipcMain.handle('pet:get-state', async () => {
     await syncTodayTasks();
-    return {
-        ...getTodayState(),
-        prompts: PROMPTS,
-        currentPromptKey
-    };
+    return getChatSyncPayload();
 });
 
 ipcMain.handle('pet:save-answer', async (_event, payload) => {
@@ -797,7 +886,10 @@ ipcMain.handle('pet:save-answer', async (_event, payload) => {
     return synced.record;
 });
 
-ipcMain.handle('pet:fetch-eu-ads-report', async () => requestEuAdsReport());
+ipcMain.handle('pet:generate-weekly-summary', async () => {
+    const days = await getWeeklyTaskRecords();
+    return generateWeeklyReview(days);
+});
 
 ipcMain.handle('pet:copy-summary', async (_event, payload) => {
     const text = String(payload?.text || '').trim();

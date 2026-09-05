@@ -12,7 +12,7 @@
         <div class="chat-card">
             <header class="chat-header drag">
                 <div>
-                    <div class="chat-title">小吉来咯</div>
+                    <div class="chat-title" id="chatTitle">小吉来上班了</div>
                     <div class="chat-subtitle" id="chatSubtitle">等待提醒</div>
                 </div>
                 <button id="closeChatBtn" class="chat-close no-drag" type="button">收起</button>
@@ -20,22 +20,16 @@
 
             <main class="chat-main">
                 <div class="bubble-row">
-                    <div class="avatar-badge">吉</div>
+                    <div class="avatar-badge" id="avatarBadge">吉</div>
                     <div class="bubble bubble-pet" id="questionBubble">点我也可以主动记一下今天的多个任务，还有每个任务的进度呀。</div>
                 </div>
 
                 <div class="quick-tabs" id="quickTabs"></div>
 
                 <section id="euAdsPanel" class="eu-ads-panel hidden">
-                    <div class="eu-ads-head">
-                        <div class="eu-ads-title">欧洲站广告近 7 日汇总</div>
-                        <button id="euAdsRefreshBtn" class="ghost-btn" type="button">刷新</button>
-                    </div>
-                    <div id="euAdsHint" class="eu-ads-hint"></div>
-                    <div id="euAdsTableWrap" class="eu-ads-table-wrap"></div>
-                    <div class="eu-ads-suggestions-title">今日建议</div>
-                    <ul id="euAdsSuggestions" class="eu-ads-suggestions"></ul>
-                    <div id="euAdsFooter" class="eu-ads-footer"></div>
+                    <div class="eu-ads-title">欧洲站提醒</div>
+                    <p class="eu-ads-hint">记得查看一下欧洲站广告情况。</p>
+                    <button id="euAdsConfirmBtn" class="save-btn" type="button">确认</button>
                 </section>
 
                 <section class="answer-panel">
@@ -65,12 +59,17 @@
                     <div class="history-title">今天已经记下来的任务</div>
                     <div class="summary-actions">
                         <button id="generateSummaryBtn" class="ghost-btn" type="button">生成今日总结</button>
+                        <button id="generateWeeklySummaryBtn" class="ghost-btn" type="button">生成本周 AI 总结</button>
                         <button id="copySummaryBtn" class="save-btn" type="button">复制总结</button>
                     </div>
                     <div id="summaryHint" class="summary-hint"></div>
                     <section id="summaryPanel" class="summary-panel hidden">
                         <div class="summary-panel-title">今日总结表格</div>
                         <div id="summaryTableWrap" class="summary-table-wrap"></div>
+                    </section>
+                    <section id="weeklySummaryPanel" class="summary-panel hidden">
+                        <div id="weeklySummaryTitle" class="summary-panel-title">本周 AI 总结表格</div>
+                        <div id="weeklySummaryTableWrap" class="summary-table-wrap"></div>
                     </section>
                     <div id="taskList" class="task-list"></div>
                 </section>
